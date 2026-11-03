@@ -336,7 +336,7 @@
 
         <section id="etraceSection" class="bg-slate-800 p-6 rounded-2xl shadow-xl border border-violet-700/50 no-print">
             <div class="flex flex-wrap items-center justify-between gap-3 mb-3">
-                <h2 class="text-xl font-bold text-violet-300">📍 e-Trace · suivi des voitures en piste</h2>
+                <h2 class="text-xl font-bold text-violet-300">📍 e-Trace · suivi des voitures en piste <span class="text-xs font-bold bg-violet-600 text-white rounded px-2 py-0.5 align-middle">BÊTA</span></h2>
                 <span id="etState" class="text-sm"></span>
             </div>
             <div id="etOff" class="text-sm text-slate-400">Ouvrez la liaison en direct (ci-dessus) : les téléphones e-Trace des pilotes volontaires et le tracé de référence apparaîtront ici.</div>
@@ -735,6 +735,18 @@ const ET = (() => {
     if (dur >= c.orange && !nearEnd) return { lvl: 'orange', dur: Math.floor(dur) };
     return { lvl: 'ok' };
   }
+  // Départ simulé depuis e-Trace (bouton d'essai, version bêta) : faute de pilote en piste publié par le PC course,
+  // un téléphone en « départ simulé » tient lieu de pilote en piste, pour tester les alertes sans course.
+  const simSeen = new Map();
+  function effTrk(trk, traces, now = Date.now()) {
+    if (trk && trk.status === 'run' && trk.bib) return trk;
+    let best = null;
+    for (const T of traces) if (T && T.sim && T.armed && T.run && (now - (T._got || 0)) / 1000 < 120 && (!best || (T.t || 0) > (best.t || 0))) best = T;
+    if (!best) return trk;
+    const k = best.bib + '|' + best.run; if (!simSeen.has(k)) simSeen.set(k, best._got || now);
+    return { status: 'run', bib: String(best.bib), name: best.name || '', startAt: best.run, _got: simSeen.get(k), sim: true };
+  }
+  const BETA = 'Version bêta de test · à remplacer avant la première épreuve 2027';
   const COL = { orange: '#e07a00', red: '#b3261e', lost: '#6a4fc4', ok: '#1d7a3a' };
   const LBL = { orange: 'Arrêté', red: 'Arrêt prolongé', lost: 'Position perdue' };
 
@@ -774,7 +786,7 @@ const ET = (() => {
     if (fixes.length < 2) return null;
     return build(fixes, [{ k: 'dep', t: 0 }, { k: 'arr', t: (fixes.length - 1) * 1000 }]);
   }
-  return { DEF, cfg, dist, prep, locate, where, at, svg, alertState, COL, LBL, build, fromGpx, km };
+  return { BETA, effTrk, DEF, cfg, dist, prep, locate, where, at, svg, alertState, COL, LBL, build, fromGpx, km };
 })();
 
     </script>
@@ -2660,9 +2672,10 @@ const ET = (() => {
         }
         function etTraceOf(bib) { let b = null; for (const t of etr.tr.values()) if (String(t.bib) === String(bib) && (!b || (t.t || 0) > (b.t || 0))) b = t; return b; }
         function etAlert() {
-            const t = etr.trk; if (!t || t.status !== 'run' || !t.bib) return null;
+            // pilote en piste : publié par PC course, sinon départ simulé depuis e-Trace (essai, version bêta)
+            const t = ET.effTrk(etr.trk, etr.tr.values()); if (!t || t.status !== 'run' || !t.bib) return null;
             const T = etTraceOf(t.bib), a = ET.alertState(t, T, etr.pr, etr.cfg);
-            return a ? { ...a, bib: String(t.bib), name: t.name || '', T, key: t.bib + '|' + t.startAt } : null;
+            return a ? { ...a, bib: String(t.bib), name: t.name || '', T, key: t.bib + '|' + t.startAt, sim: !!t.sim } : null;
         }
         function etWhere(T) { return T && etr.pr && Number.isFinite(T.d) ? ET.where(etr.pr, T.d) : ''; }
         function etJournal(a) {
@@ -2674,7 +2687,7 @@ const ET = (() => {
             etr.last[k] = lvl;
             const txt = { orange: 'Arrêt détecté (orange)', red: 'Arrêt prolongé (rouge)', lost: 'Position perdue (violet)', ok: prev && prev !== 'none' ? 'Reprise du mouvement' : 'Suivi actif' }[lvl];
             if (!txt) return;
-            etr.log.unshift({ at: Date.now(), bib: a.bib, txt, where: etWhere(a.T), lvl });
+            etr.log.unshift({ at: Date.now(), bib: a.bib, txt: (a.sim ? 'Essai · ' : '') + txt, where: etWhere(a.T), lvl });
             if (etr.log.length > 60) etr.log.length = 60;
         }
         function etAck() { const a = etAlert(); if (a) { etr.ack = a.key + '|' + a.lvl; etr.log.unshift({ at: Date.now(), bib: a.bib, txt: 'Pris en compte par le PC course', lvl: 'ack' }); } etRender(); }
@@ -2689,7 +2702,7 @@ const ET = (() => {
             const collapsed = show && etr.ack === a.key + '|' + a.lvl;
             if (show) {
                 const c = ET.COL[a.lvl], w = etWhere(a.T);
-                const title = a.lvl === 'lost' ? 'Position perdue' : a.lvl === 'red' ? `Arrêt prolongé · arrêté depuis ${a.dur} s` : `Arrêté depuis ${a.dur} s`;
+                const title = (a.sim ? 'Essai · ' : '') + (a.lvl === 'lost' ? 'Position perdue' : a.lvl === 'red' ? `Arrêt prolongé · arrêté depuis ${a.dur} s` : `Arrêté depuis ${a.dur} s`);
                 const sub = [esc(a.name), a.lvl === 'lost' ? `aucune position depuis ${a.age} s` : '', w ? esc(w) : '', a.T && a.T.acc ? `précision ± ${esc(a.T.acc)} m` : ''].filter(Boolean).join(' · ');
                 ban.innerHTML = collapsed
                     ? `<div style="background:${c}" class="rounded-xl px-4 py-2 flex flex-wrap items-center gap-3 text-white text-sm font-semibold shadow-lg"><span class="font-black">n° ${esc(a.bib)}</span><span>${esc(title)}</span><span class="opacity-80">pris en compte</span><button type="button" onclick="etShowPlan()" class="ml-auto underline">Voir sur le plan</button></div>`
@@ -2704,11 +2717,11 @@ const ET = (() => {
             sec.querySelector('#etOff').classList.toggle('hidden', on);
             sec.querySelector('#etMain').classList.toggle('hidden', !on);
             if (!on) return;
-            const now = Date.now(), t = etr.trk, T = a && a.T;
+            const now = Date.now(), t = ET.effTrk(etr.trk, etr.tr.values()), T = a && a.T;
             let st;
             if (!t || t.status !== 'run') st = '<b class="text-slate-200">Piste libre</b>';
             else if (a && a.lvl === 'none') st = `<b class="text-slate-200">En piste : n° ${esc(t.bib)} ${esc(t.name || '')}</b> <span class="text-slate-400">· pas de téléphone e-Trace pour ce pilote</span>`;
-            else st = `<b style="color:${ET.COL[a.lvl] === ET.COL.ok ? '#7dd99a' : ET.COL[a.lvl]}">En piste : n° ${esc(t.bib)} ${esc(t.name || '')}</b> <span class="text-slate-400">· ${a.lvl === 'ok' ? 'suivi actif' : esc(ET.LBL[a.lvl] || '')}${etWhere(T) ? ' · ' + esc(etWhere(T)) : ''}</span>`;
+            else st = `<b style="color:${ET.COL[a.lvl] === ET.COL.ok ? '#7dd99a' : ET.COL[a.lvl]}">${t.sim ? 'Essai (départ simulé) · ' : ''}En piste : n° ${esc(t.bib)} ${esc(t.name || '')}</b> <span class="text-slate-400">· ${a.lvl === 'ok' ? 'suivi actif' : esc(ET.LBL[a.lvl] || '')}${etWhere(T) ? ' · ' + esc(etWhere(T)) : ''}</span>`;
             sec.querySelector('#etState').innerHTML = st;
             const dots = T && a ? [{ lat: T.lat, lng: T.lng, color: ET.COL[a.lvl] || ET.COL.ok, label: 'N° ' + a.bib, pulse: a.lvl !== 'ok' }] : [];
             sec.querySelector('#etPlan').innerHTML = ET.svg(etr.pr, dots, { road: '#334155', chrono: '#60a5fa', liaison: '#64748b', ink: '#e2e8f0', muted: '#94a3b8', bg: '#1e293b', mark: '#3b82f6' });
@@ -2721,7 +2734,7 @@ const ET = (() => {
             const lc = { orange: 'text-amber-300', red: 'text-rose-300', lost: 'text-violet-300', ok: 'text-emerald-300', ack: 'text-slate-400' };
             sec.querySelector('#etLog').innerHTML = etr.log.length ? etr.log.map(l => `<div class="flex gap-3"><span class="font-mono text-slate-500">${esc(new Date(l.at).toLocaleTimeString('fr-FR'))}</span><span class="${lc[l.lvl] || ''}">n° ${esc(l.bib)} · ${esc(l.txt)}${l.where ? ' · ' + esc(l.where) : ''}</span></div>`).join('') : '<div class="text-slate-500">Rien à signaler.</div>';
             sec.querySelector('#etErr').textContent = etr.err;
-            sec.querySelector('#etCfg').textContent = `Orange dès ${etr.cfg.orange} s d'arrêt · rouge à ${etr.cfg.red} s · violet après ${etr.cfg.lost} s sans position · aucune sonnerie.`;
+            sec.querySelector('#etCfg').textContent = `Orange dès ${etr.cfg.orange} s d'arrêt · rouge à ${etr.cfg.red} s · violet après ${etr.cfg.lost} s sans position · aucune sonnerie. e-Trace : ${ET.BETA.toLowerCase()}.`;
         }
         setInterval(() => { if (etr.code) etRender(); }, 1000);
         // ===================== Fichiers FDS reçus par courriel =====================
