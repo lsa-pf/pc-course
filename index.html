@@ -614,7 +614,8 @@
     <script>
 /* ===== e-Trace · noyau commun (e-Trace, e-DC, PC course) =====
    Tracé de référence : { name, pts: [lat, lng, lat, lng, …], marks: [{ k, name, i }] }
-   k : 'pd' parc fermé départ · 'dep' ligne de départ · 'pt' point marqué (chicane…) · 'arr' ligne d'arrivée · 'pa' parc fermé arrivée
+   k : 'dep' ligne de départ · 'arr' ligne d'arrivée · 'pt' point marqué, avec cat : 'chicane' | 'parc' | 'autre' et un nom libre
+   (anciens tracés : 'pd' et 'pa' sont lus comme des parcs « Parc fermé départ » et « Parc fermé arrivée »)
    i : indice du point du tracé (dans pts / 2). Distances en mètres, comptées depuis la ligne de départ. */
 const ET = (() => {
   const R = 6371008.8, rad = Math.PI / 180;
@@ -630,11 +631,14 @@ const ET = (() => {
     const P = [], cum = [0];
     for (let j = 0; j < n; j++) P.push([ref.pts[2 * j + 1] * rad * R * k, ref.pts[2 * j] * rad * R]);
     for (let j = 1; j < n; j++) cum.push(cum[j - 1] + Math.hypot(P[j][0] - P[j - 1][0], P[j][1] - P[j - 1][1]));
-    const marks = (Array.isArray(ref.marks) ? ref.marks : []).filter(m => m && Number.isInteger(m.i) && m.i >= 0 && m.i < n).map(m => ({ k: m.k, name: String(m.name || ''), i: m.i })).sort((a, b) => a.i - b.i);
+    const marks = (Array.isArray(ref.marks) ? ref.marks : []).filter(m => m && Number.isInteger(m.i) && m.i >= 0 && m.i < n).map(m => {
+      if (m.k === 'pd' || m.k === 'pa') return { k: 'pt', cat: 'parc', name: String(m.name || '') || (m.k === 'pd' ? 'Parc fermé départ' : 'Parc fermé arrivée'), i: m.i };
+      return { k: m.k, cat: m.k === 'pt' ? (['chicane', 'parc', 'autre'].includes(m.cat) ? m.cat : 'chicane') : '', name: String(m.name || ''), i: m.i };
+    }).sort((a, b) => a.i - b.i);
     const dm = marks.find(m => m.k === 'dep'), am = marks.find(m => m.k === 'arr');
     const iDep = dm ? dm.i : 0, iArr = am ? am.i : n - 1, c0 = cum[iDep];
     marks.forEach(m => m.s = cum[m.i] - c0);
-    let c = 0; marks.forEach(m => { if (m.k === 'pt') { c++; m.n = c; if (!m.name) m.name = 'Point ' + c; } });
+    let c = 0, o = 0; marks.forEach(m => { if (m.k !== 'pt') return; if (m.cat === 'chicane') { c++; m.n = c; if (!m.name) m.name = 'Chicane ' + c; } else { o++; if (!m.name) m.name = m.cat === 'parc' ? 'Parc' : 'Repère ' + o; } });
     return { ref, n, P, cum, lat0, k, iDep, iArr, c0, L: cum[iArr] - c0, marks, toXY: (lat, lng) => [lng * rad * R * k, lat * rad * R] };
   }
   // Situe une position sur le tracé : abscisse s (m depuis le départ), écart latéral, zone
@@ -657,10 +661,9 @@ const ET = (() => {
   // Libellé lisible d'une abscisse : « entre C2 et C3 · 1,40 km du départ »
   function where(pr, s) {
     if (!pr || !Number.isFinite(s)) return '';
-    if (s < -5) return 'liaison avant le départ' + (pr.marks.some(m => m.k === 'pd') ? ' (parc fermé départ)' : '');
-    if (s > pr.L + 5) return 'après l\'arrivée' + (pr.marks.some(m => m.k === 'pa') ? ' (vers le parc fermé arrivée)' : '');
     const pts = pr.marks.filter(m => m.k === 'pt');
     const near = pts.find(m => Math.abs(m.s - s) <= 25);
+    if (s < -5 || s > pr.L + 5) return (near ? 'à ' + near.name + ' · ' : '') + (s < 0 ? 'liaison avant le départ' : 'après l\'arrivée');
     let t;
     if (near) t = 'à ' + (near.name || 'C' + near.n);
     else {
@@ -704,7 +707,8 @@ const ET = (() => {
       const [u, v] = T(pr.P[m.i]);
       if (m.k === 'dep') s += lineAt(m.i, 'Départ');
       else if (m.k === 'arr') s += lineAt(m.i, 'Arrivée');
-      else if (m.k === 'pd' || m.k === 'pa') s += `<rect x="${(u - 7).toFixed(1)}" y="${(v - 7).toFixed(1)}" width="14" height="14" rx="3" fill="${C.bg}" stroke="${C.muted}" stroke-width="2.5"><title>${m.k === 'pd' ? 'Parc fermé départ' : 'Parc fermé arrivée'}</title></rect>`;
+      else if (m.k === 'pt' && m.cat === 'parc') s += `<rect x="${(u - 7).toFixed(1)}" y="${(v - 7).toFixed(1)}" width="14" height="14" rx="3" fill="${C.bg}" stroke="${C.muted}" stroke-width="2.5"><title>${m.name}</title></rect><text x="${(u > W - 90 ? u - 10 : u + 10).toFixed(1)}" text-anchor="${u > W - 90 ? 'end' : 'start'}" y="${(v + 18).toFixed(1)}" font-size="10" fill="${C.muted}" font-family="Atkinson Hyperlegible, sans-serif">${m.name.replace(/[&<>]/g, '')}</text>`;
+      else if (m.k === 'pt' && m.cat === 'autre') s += `<path d="M${u.toFixed(1)},${(v - 7).toFixed(1)} l7,7 l-7,7 l-7,-7 z" fill="${C.bg}" stroke="${C.mark}" stroke-width="2.5"><title>${m.name}</title></path><text x="${(u > W - 90 ? u - 10 : u + 10).toFixed(1)}" text-anchor="${u > W - 90 ? 'end' : 'start'}" y="${(v - 9).toFixed(1)}" font-size="10" fill="${C.muted}" font-family="Atkinson Hyperlegible, sans-serif">${m.name.replace(/[&<>]/g, '')}</text>`;
       else if (m.k === 'pt') s += `<circle cx="${u.toFixed(1)}" cy="${v.toFixed(1)}" r="9" fill="${C.mark}" stroke="${C.bg}" stroke-width="2"/><text x="${u.toFixed(1)}" y="${(v + 3.5).toFixed(1)}" text-anchor="middle" font-size="9" font-weight="700" fill="#fff" font-family="Atkinson Hyperlegible, sans-serif">C${m.n}</text>`;
     }
     for (const d of dots) {
@@ -765,7 +769,7 @@ const ET = (() => {
     const S = G.map((f, j) => { if (j === 0 || j === G.length - 1) return { ...f }; const a = G[j - 1], b = G[j + 1]; return { t: f.t, lat: (a.lat + f.lat + b.lat) / 3, lng: (a.lng + f.lng + b.lng) / 3 }; });
     // repères rattachés au point le plus proche dans le temps
     const keep = new Set([0, S.length - 1]);
-    const mk = marks.map(m => { let bi = 0, bd = Infinity; S.forEach((f, j) => { const d = Math.abs(f.t - m.t); if (d < bd) { bd = d; bi = j; } }); keep.add(bi); return { k: m.k, name: m.name || '', j: bi }; });
+    const mk = marks.map(m => { let bi = 0, bd = Infinity; S.forEach((f, j) => { const d = Math.abs(f.t - m.t); if (d < bd) { bd = d; bi = j; } }); keep.add(bi); return { k: m.k, cat: m.cat || (m.k === 'pt' ? 'chicane' : ''), name: m.name || '', j: bi }; });
     // Douglas-Peucker (3 m) en gardant les repères
     const lat0 = S[0].lat, k = Math.cos(lat0 * rad), XY = S.map(f => [f.lng * rad * R * k, f.lat * rad * R]);
     const tol = 3, stack = [[0, S.length - 1]];
@@ -779,7 +783,7 @@ const ET = (() => {
     const idx = [...keep].sort((a, b) => a - b), map = new Map(idx.map((j, n) => [j, n]));
     const pts = []; idx.forEach(j => pts.push(+S[j].lat.toFixed(6), +S[j].lng.toFixed(6)));
     const accs = fixes.map(f => f.acc).filter(Number.isFinite);
-    return { pts, marks: mk.map(m => ({ k: m.k, name: m.name, i: map.get(m.j) })), stats: { raw: fixes.length, kept: idx.length, acc: accs.length ? accs.reduce((a, b) => a + b, 0) / accs.length : null, dur: (fixes[fixes.length - 1].t - fixes[0].t) / 1000 } };
+    return { pts, marks: mk.map(m => ({ k: m.k, cat: m.cat, name: m.name, i: map.get(m.j) })), stats: { raw: fixes.length, kept: idx.length, acc: accs.length ? accs.reduce((a, b) => a + b, 0) / accs.length : null, dur: (fixes[fixes.length - 1].t - fixes[0].t) / 1000 } };
   }
   // Import d'un fichier GPX : tout le fichier devient le parcours chronométré
   function fromGpx(text) {
