@@ -93,6 +93,8 @@
 </head>
 <body class="bg-slate-900 text-slate-100 min-h-screen p-4 sm:p-6">
     <div class="max-w-7xl mx-auto space-y-6">
+        <!-- e-Trace : bandeau d'arrêt en piste (sans sonnerie) -->
+        <div id="etAlert" class="hidden no-print" style="position:sticky;top:8px;z-index:60"></div>
 
         <!-- En-tête -->
         <header class="flex flex-wrap justify-between items-center bg-slate-800 p-6 rounded-2xl shadow-xl border border-slate-700 gap-4 no-print">
@@ -328,6 +330,32 @@
                         <label class="text-xs text-slate-300 flex items-center gap-2"><input type="checkbox" id="fdsAuto" onchange="fdsAutoToggle(this.checked)"> Importer automatiquement dans l'événement affiché <span id="fdsAutoInfo" class="text-slate-500"></span></label>
                     </div>
                     <div id="fdsInbox" class="space-y-1 text-sm"></div>
+                </div>
+            </div>
+        </section>
+
+        <section id="etraceSection" class="bg-slate-800 p-6 rounded-2xl shadow-xl border border-violet-700/50 no-print">
+            <div class="flex flex-wrap items-center justify-between gap-3 mb-3">
+                <h2 class="text-xl font-bold text-violet-300">📍 e-Trace · suivi des voitures en piste</h2>
+                <span id="etState" class="text-sm"></span>
+            </div>
+            <div id="etOff" class="text-sm text-slate-400">Ouvrez la liaison en direct (ci-dessus) : les téléphones e-Trace des pilotes volontaires et le tracé de référence apparaîtront ici.</div>
+            <div id="etMain" class="hidden grid grid-cols-1 lg:grid-cols-5 gap-4">
+                <div class="lg:col-span-3 bg-slate-900/60 rounded-xl p-3 border border-slate-700">
+                    <div class="flex flex-wrap justify-between gap-2 text-xs text-slate-400 mb-1"><span>Plan du tracé</span><span>Tracé de référence : <span id="etRef" class="text-slate-300"></span></span></div>
+                    <div id="etPlan" style="max-width:640px;margin:0 auto"></div>
+                </div>
+                <div class="lg:col-span-2 space-y-4">
+                    <div class="bg-slate-900/60 rounded-xl p-4 border border-slate-700">
+                        <div class="text-xs uppercase tracking-wider text-slate-400 font-semibold mb-2">Journal</div>
+                        <div id="etLog" class="space-y-1 text-sm max-h-56 overflow-y-auto"></div>
+                    </div>
+                    <div class="bg-slate-900/60 rounded-xl p-4 border border-slate-700">
+                        <div class="text-xs uppercase tracking-wider text-slate-400 font-semibold mb-2">Téléphones e-Trace</div>
+                        <div id="etPhones" class="space-y-1 text-sm"></div>
+                    </div>
+                    <p id="etCfg" class="text-xs text-slate-500"></p>
+                    <p id="etErr" class="text-xs text-rose-300"></p>
                 </div>
             </div>
         </section>
@@ -583,6 +611,173 @@
         </div>
     </div>
 
+    <script>
+/* ===== e-Trace · noyau commun (e-Trace, e-DC, PC course) =====
+   Tracé de référence : { name, pts: [lat, lng, lat, lng, …], marks: [{ k, name, i }] }
+   k : 'pd' parc fermé départ · 'dep' ligne de départ · 'pt' point marqué (chicane…) · 'arr' ligne d'arrivée · 'pa' parc fermé arrivée
+   i : indice du point du tracé (dans pts / 2). Distances en mètres, comptées depuis la ligne de départ. */
+const ET = (() => {
+  const R = 6371008.8, rad = Math.PI / 180;
+  // Réglages par défaut (modifiables plus tard par épreuve : champ « etrace » du document de l'épreuve)
+  const DEF = { fast: 2, slow: 30, vStop: 1, nStop: 2, orange: 2, red: 10, lost: 6, endGuard: 50, maxAcc: 25 };
+  const cfg = ev => { const o = { ...DEF }, e = ev && ev.etrace; if (e && typeof e === 'object') for (const k in DEF) if (Number.isFinite(+e[k]) && +e[k] > 0) o[k] = +e[k]; return o; };
+  const dist = (a1, o1, a2, o2) => { const k = Math.cos((a1 + a2) / 2 * rad); return Math.hypot((o2 - o1) * rad * R * k, (a2 - a1) * rad * R); };
+
+  // Prépare un tracé : coordonnées planes locales, distances cumulées, repères
+  function prep(ref) {
+    if (!ref || !Array.isArray(ref.pts) || ref.pts.length < 4) return null;
+    const n = Math.floor(ref.pts.length / 2), lat0 = ref.pts[0], k = Math.cos(lat0 * rad);
+    const P = [], cum = [0];
+    for (let j = 0; j < n; j++) P.push([ref.pts[2 * j + 1] * rad * R * k, ref.pts[2 * j] * rad * R]);
+    for (let j = 1; j < n; j++) cum.push(cum[j - 1] + Math.hypot(P[j][0] - P[j - 1][0], P[j][1] - P[j - 1][1]));
+    const marks = (Array.isArray(ref.marks) ? ref.marks : []).filter(m => m && Number.isInteger(m.i) && m.i >= 0 && m.i < n).map(m => ({ k: m.k, name: String(m.name || ''), i: m.i })).sort((a, b) => a.i - b.i);
+    const dm = marks.find(m => m.k === 'dep'), am = marks.find(m => m.k === 'arr');
+    const iDep = dm ? dm.i : 0, iArr = am ? am.i : n - 1, c0 = cum[iDep];
+    marks.forEach(m => m.s = cum[m.i] - c0);
+    let c = 0; marks.forEach(m => { if (m.k === 'pt') { c++; m.n = c; if (!m.name) m.name = 'Point ' + c; } });
+    return { ref, n, P, cum, lat0, k, iDep, iArr, c0, L: cum[iArr] - c0, marks, toXY: (lat, lng) => [lng * rad * R * k, lat * rad * R] };
+  }
+  // Situe une position sur le tracé : abscisse s (m depuis le départ), écart latéral, zone
+  function locate(pr, lat, lng, hint) {
+    if (!pr) return null;
+    const [x, y] = pr.toXY(lat, lng);
+    let best = null;
+    for (let j = 0; j < pr.n - 1; j++) {
+      const [ax, ay] = pr.P[j], [bx, by] = pr.P[j + 1], dx = bx - ax, dy = by - ay, l2 = dx * dx + dy * dy;
+      const u = l2 ? Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / l2)) : 0;
+      const d = Math.hypot(x - ax - u * dx, y - ay - u * dy);
+      const s = pr.cum[j] + u * Math.sqrt(l2) - pr.c0;
+      // à distance comparable, on préfère le tronçon proche de la position précédente (route qui repasse près d'elle-même)
+      const score = d + (Number.isFinite(hint) ? Math.min(60, Math.abs(s - hint) / 20) : 0);
+      if (!best || score < best.score) best = { score, s, off: d };
+    }
+    return { s: best.s, off: best.off, zone: best.s < 0 ? 'pd' : best.s > pr.L ? 'pa' : 'ch' };
+  }
+  const km = s => (Math.abs(s) / 1000).toFixed(2).replace('.', ',') + ' km';
+  // Libellé lisible d'une abscisse : « entre C2 et C3 · 1,40 km du départ »
+  function where(pr, s) {
+    if (!pr || !Number.isFinite(s)) return '';
+    if (s < -5) return 'liaison avant le départ' + (pr.marks.some(m => m.k === 'pd') ? ' (parc fermé départ)' : '');
+    if (s > pr.L + 5) return 'après l\'arrivée' + (pr.marks.some(m => m.k === 'pa') ? ' (vers le parc fermé arrivée)' : '');
+    const pts = pr.marks.filter(m => m.k === 'pt');
+    const near = pts.find(m => Math.abs(m.s - s) <= 25);
+    let t;
+    if (near) t = 'à ' + (near.name || 'C' + near.n);
+    else {
+      const prev = [...pts].reverse().find(m => m.s < s), next = pts.find(m => m.s > s);
+      t = prev && next ? `entre ${prev.name} et ${next.name}` : prev ? `après ${prev.name}` : next ? `avant ${next.name}` : '';
+    }
+    return (t ? t + ' · ' : '') + km(s) + ' du départ';
+  }
+  // Point du tracé à l'abscisse s (pour placer un repère)
+  function at(pr, s) {
+    const c = s + pr.c0;
+    let j = 0; while (j < pr.n - 2 && pr.cum[j + 1] < c) j++;
+    const l = pr.cum[j + 1] - pr.cum[j], u = l ? Math.max(0, Math.min(1, (c - pr.cum[j]) / l)) : 0;
+    return [pr.P[j][0] + u * (pr.P[j + 1][0] - pr.P[j][0]), pr.P[j][1] + u * (pr.P[j + 1][1] - pr.P[j][1])];
+  }
+
+  // Plan SVG du tracé. dots : [{ lat, lng, color, label, pulse }]. th : couleurs (fond clair ou sombre)
+  function svg(pr, dots = [], th = {}) {
+    const C = { road: '#c9d8e0', chrono: '#1f5fae', liaison: '#9fb4c2', ink: '#0e2a47', muted: '#4a6274', bg: '#ffffff', mark: '#1f5fae', ...th };
+    if (!pr) return `<div style="padding:24px 10px;text-align:center;color:${C.muted};font-size:.9rem">Aucun tracé de référence pour cette épreuve.<br>Le Directeur de course peut l'enregistrer dans e-DC, onglet « Voiture 0 ».</div>`;
+    let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+    pr.P.forEach(([x, y]) => { x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); });
+    // hauteur adaptée à la forme du tracé (ni bande vide, ni plan trop haut)
+    const W = 360, pad = 24, H = Math.round(Math.max(170, Math.min(320, 2 * pad + (W - 2 * pad) * (y1 - y0) / Math.max(1, x1 - x0))));
+    const sc = Math.min((W - 2 * pad) / Math.max(1, x1 - x0), (H - 2 * pad) / Math.max(1, y1 - y0));
+    const ox = (W - (x1 - x0) * sc) / 2, oy = (H - (y1 - y0) * sc) / 2;
+    const T = ([x, y]) => [ox + (x - x0) * sc, H - oy - (y - y0) * sc];
+    const path = (a, b) => { let d = ''; for (let j = a; j <= b; j++) { const [u, v] = T(pr.P[j]); d += (j === a ? 'M' : 'L') + u.toFixed(1) + ',' + v.toFixed(1); } return d; };
+    let s = `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;display:block" role="img" aria-label="Plan du tracé">`;
+    if (pr.iDep > 0) s += `<path d="${path(0, pr.iDep)}" fill="none" stroke="${C.liaison}" stroke-width="3" stroke-dasharray="2 6" stroke-linecap="round"/>`;
+    if (pr.iArr < pr.n - 1) s += `<path d="${path(pr.iArr, pr.n - 1)}" fill="none" stroke="${C.liaison}" stroke-width="3" stroke-dasharray="2 6" stroke-linecap="round"/>`;
+    s += `<path d="${path(pr.iDep, pr.iArr)}" fill="none" stroke="${C.road}" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>`;
+    s += `<path d="${path(pr.iDep, pr.iArr)}" fill="none" stroke="${C.chrono}" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>`;
+    const lineAt = (i, label) => {
+      const a = pr.P[Math.max(0, i - 1)], b = pr.P[Math.min(pr.n - 1, i + 1)], [u, v] = T(pr.P[i]);
+      let dx = b[0] - a[0], dy = -(b[1] - a[1]); const l = Math.hypot(dx, dy) || 1; dx /= l; dy /= l;
+      return `<line x1="${(u - dy * 14).toFixed(1)}" y1="${(v + dx * 14).toFixed(1)}" x2="${(u + dy * 14).toFixed(1)}" y2="${(v - dx * 14).toFixed(1)}" stroke="${C.ink}" stroke-width="4" stroke-dasharray="3 3"/>`
+        + `<text x="${(u + dy * 18).toFixed(1)}" y="${(v - dx * 18 + 4).toFixed(1)}" text-anchor="${dy >= 0 ? 'start' : 'end'}" font-size="12" font-weight="700" fill="${C.ink}" font-family="Atkinson Hyperlegible, sans-serif">${label}</text>`;
+    };
+    for (const m of pr.marks) {
+      const [u, v] = T(pr.P[m.i]);
+      if (m.k === 'dep') s += lineAt(m.i, 'Départ');
+      else if (m.k === 'arr') s += lineAt(m.i, 'Arrivée');
+      else if (m.k === 'pd' || m.k === 'pa') s += `<rect x="${(u - 7).toFixed(1)}" y="${(v - 7).toFixed(1)}" width="14" height="14" rx="3" fill="${C.bg}" stroke="${C.muted}" stroke-width="2.5"><title>${m.k === 'pd' ? 'Parc fermé départ' : 'Parc fermé arrivée'}</title></rect>`;
+      else if (m.k === 'pt') s += `<circle cx="${u.toFixed(1)}" cy="${v.toFixed(1)}" r="9" fill="${C.mark}" stroke="${C.bg}" stroke-width="2"/><text x="${u.toFixed(1)}" y="${(v + 3.5).toFixed(1)}" text-anchor="middle" font-size="9" font-weight="700" fill="#fff" font-family="Atkinson Hyperlegible, sans-serif">C${m.n}</text>`;
+    }
+    for (const d of dots) {
+      if (!Number.isFinite(d.lat) || !Number.isFinite(d.lng)) continue;
+      const [u, v] = T(pr.toXY(d.lat, d.lng));
+      if (u < -40 || u > W + 40 || v < -40 || v > H + 40) continue;
+      if (d.pulse) s += `<circle cx="${u.toFixed(1)}" cy="${v.toFixed(1)}" r="17" fill="${d.color}" fill-opacity=".28"/>`;
+      s += `<circle cx="${u.toFixed(1)}" cy="${v.toFixed(1)}" r="8" fill="${d.color}" stroke="${C.bg}" stroke-width="2.5"/>`;
+      if (d.label) s += `<text x="${(u + 12).toFixed(1)}" y="${(v - 10).toFixed(1)}" font-size="13" font-weight="700" fill="${C.ink}" font-family="Atkinson Hyperlegible, sans-serif" paint-order="stroke" stroke="${C.bg}" stroke-width="3">${d.label}</text>`;
+    }
+    return s + '</svg>';
+  }
+
+  // État d'alerte d'un pilote en piste, vu par le PC course ou e-DC.
+  // trk : document public/track ; T : document trace du téléphone du pilote (ou null), reçu à T._got (horloge locale)
+  // Retour : { lvl: 'ok' | 'orange' | 'red' | 'lost', dur, age, msg }
+  function alertState(trk, T, pr, c, now = Date.now()) {
+    if (!trk || trk.status !== 'run' || !trk.bib) return null;
+    const since = (now - (trk._got || now)) / 1000;
+    if (!T) return { lvl: 'none' };                     // pilote sans e-Trace : rien à surveiller
+    const age = (now - (T._got || 0)) / 1000 + (Number(T.fa) || 0);   // + âge du dernier point GPS au moment de l'envoi
+    const thisRun = T.armed && String(T.bib) === String(trk.bib) && Number(T.run) === Number(trk.startAt);
+    if ((age > c.lost && since > c.lost) || (!thisRun && since > c.lost + 2)) return { lvl: 'lost', age: Math.round(Math.min(age, since)) };
+    if (!thisRun) return { lvl: 'ok' };
+    const nearEnd = pr && Number.isFinite(T.d) && T.d > pr.L - c.endGuard;
+    const dur = T.stopFor > 0 ? T.stopFor + Math.max(0, age) : 0;
+    if (dur >= c.red && !nearEnd) return { lvl: 'red', dur: Math.floor(dur) };
+    if (dur >= c.orange && !nearEnd) return { lvl: 'orange', dur: Math.floor(dur) };
+    return { lvl: 'ok' };
+  }
+  const COL = { orange: '#e07a00', red: '#b3261e', lost: '#6a4fc4', ok: '#1d7a3a' };
+  const LBL = { orange: 'Arrêté', red: 'Arrêt prolongé', lost: 'Position perdue' };
+
+  // ----- Traitement d'un enregistrement Voiture 0 -----
+  // fixes : [{ t, lat, lng, acc }] ; marks : [{ k, name, t }] → tracé allégé { pts, marks, stats }
+  function build(fixes, marks, maxAcc = 25) {
+    let F = fixes.filter(f => Number.isFinite(f.lat) && Number.isFinite(f.lng) && (!(f.acc > maxAcc)));
+    // sauts impossibles (> 70 m/s) écartés
+    const G = [];
+    for (const f of F) { const p = G[G.length - 1]; if (p && f.t > p.t && dist(p.lat, p.lng, f.lat, f.lng) / ((f.t - p.t) / 1000) > 70) continue; if (p && dist(p.lat, p.lng, f.lat, f.lng) < 1) continue; G.push(f); }
+    if (G.length < 2) return null;
+    // lissage léger (moyenne glissante sur 3 points)
+    const S = G.map((f, j) => { if (j === 0 || j === G.length - 1) return { ...f }; const a = G[j - 1], b = G[j + 1]; return { t: f.t, lat: (a.lat + f.lat + b.lat) / 3, lng: (a.lng + f.lng + b.lng) / 3 }; });
+    // repères rattachés au point le plus proche dans le temps
+    const keep = new Set([0, S.length - 1]);
+    const mk = marks.map(m => { let bi = 0, bd = Infinity; S.forEach((f, j) => { const d = Math.abs(f.t - m.t); if (d < bd) { bd = d; bi = j; } }); keep.add(bi); return { k: m.k, name: m.name || '', j: bi }; });
+    // Douglas-Peucker (3 m) en gardant les repères
+    const lat0 = S[0].lat, k = Math.cos(lat0 * rad), XY = S.map(f => [f.lng * rad * R * k, f.lat * rad * R]);
+    const tol = 3, stack = [[0, S.length - 1]];
+    while (stack.length) {
+      const [a, b] = stack.pop(); let md = 0, mi = -1;
+      const [ax, ay] = XY[a], [bx, by] = XY[b], dx = bx - ax, dy = by - ay, l = Math.hypot(dx, dy) || 1;
+      for (let j = a + 1; j < b; j++) { const d = Math.abs((XY[j][0] - ax) * dy - (XY[j][1] - ay) * dx) / l; if (d > md) { md = d; mi = j; } }
+      if (md > tol) { keep.add(mi); stack.push([a, mi], [mi, b]); }
+    }
+    for (const m of mk) keep.add(m.j);
+    const idx = [...keep].sort((a, b) => a - b), map = new Map(idx.map((j, n) => [j, n]));
+    const pts = []; idx.forEach(j => pts.push(+S[j].lat.toFixed(6), +S[j].lng.toFixed(6)));
+    const accs = fixes.map(f => f.acc).filter(Number.isFinite);
+    return { pts, marks: mk.map(m => ({ k: m.k, name: m.name, i: map.get(m.j) })), stats: { raw: fixes.length, kept: idx.length, acc: accs.length ? accs.reduce((a, b) => a + b, 0) / accs.length : null, dur: (fixes[fixes.length - 1].t - fixes[0].t) / 1000 } };
+  }
+  // Import d'un fichier GPX : tout le fichier devient le parcours chronométré
+  function fromGpx(text) {
+    const doc = new DOMParser().parseFromString(text, 'application/xml');
+    const nodes = [...doc.getElementsByTagName('trkpt'), ...doc.getElementsByTagName('rtept')];
+    const fixes = nodes.map((p, j) => ({ t: j * 1000, lat: +p.getAttribute('lat'), lng: +p.getAttribute('lon') })).filter(f => Number.isFinite(f.lat) && Number.isFinite(f.lng));
+    if (fixes.length < 2) return null;
+    return build(fixes, [{ k: 'dep', t: 0 }, { k: 'arr', t: (fixes.length - 1) * 1000 }]);
+  }
+  return { DEF, cfg, dist, prep, locate, where, at, svg, alertState, COL, LBL, build, fromGpx, km };
+})();
+
+    </script>
     <script>
         // ===================== Paramètres =====================
         // Format par événement : nbEssais manches d'essai (non comptabilisées) puis nbManches manches chronométrées.
@@ -1667,13 +1862,13 @@
             for (const id of ['eventParamsGrid', 'raceSection', 'driverFormSection', 'penSection', 'entrySection', 'filterSection', 'rankingsSection', 'vizSection', 'btnPaste', 'btnPastePen', 'btnPrintRank', 'btnPrintEntry', 'btnExportEvent', 'btnReset', 'btnDeleteEvent'])
                 document.getElementById(id).classList.toggle('hidden', champ);
             document.getElementById('champSection').classList.toggle('hidden', !champ);
-            if (champ) { document.getElementById('liveSection').classList.add('hidden'); document.getElementById('pontSection').classList.add('hidden'); }
+            if (champ) { document.getElementById('liveSection').classList.add('hidden'); document.getElementById('pontSection').classList.add('hidden'); document.getElementById('etraceSection').classList.add('hidden'); }
             document.getElementById('evTabs').classList.toggle('hidden', champ);
             document.getElementById('pilotsSection').classList.toggle('hidden', champ || evTab !== 'pilotes');
             if (champ) { renderChampionship(view.slice(6)); return; }
             // Course : déroulement, pénalités, tableau des temps, analyse ; Classements : filtre + classements H/F
-            const TAB_SECTIONS = { course: ['liveSection', 'pontSection', 'raceSection', 'penSection', 'entrySection', 'vizSection'], pilotes: [], classements: ['filterSection', 'rankingsSection'] };
-            for (const id of ['liveSection', 'pontSection', 'raceSection', 'driverFormSection', 'penSection', 'entrySection', 'filterSection', 'rankingsSection', 'vizSection'])
+            const TAB_SECTIONS = { course: ['liveSection', 'etraceSection', 'pontSection', 'raceSection', 'penSection', 'entrySection', 'vizSection'], pilotes: [], classements: ['filterSection', 'rankingsSection'] };
+            for (const id of ['liveSection', 'etraceSection', 'pontSection', 'raceSection', 'driverFormSection', 'penSection', 'entrySection', 'filterSection', 'rankingsSection', 'vizSection'])
                 document.getElementById(id).classList.toggle('hidden', !(TAB_SECTIONS[evTab] || []).includes(id));
             // le formulaire ne sert plus qu'à modifier un pilote (bouton « Modifier » du tableau des temps)
             document.getElementById('driverFormSection').classList.toggle('hidden', evTab !== 'pilotes' || !document.getElementById('editingId').value);
@@ -1698,6 +1893,7 @@
             liveAfterRender();
             renderInbox();
             renderPont();
+            etRender();
         }
 
         function renderStatus(derived) {
@@ -2443,6 +2639,91 @@
         let fbUser = null, liveSubs = [], liveSubCode = null, liveDevices = [], liveListSig = '', liveListTimer = null, liveHeatSent = {}, liveErrMsg = '', liveCount = { infr: 0, rep: 0 }, liveFirst = {};
         window.liveReady = () => renderAll();
         window.liveAuthChanged = u => { fbUser = u && !u.isAnonymous ? u : null; liveResub(); inboxResub(); renderAll(); };
+        // ===================== e-Trace : suivi des voitures en piste =====================
+        // Les téléphones des pilotes volontaires écrivent leur position dans events/{code}/trace/{uid} ;
+        // le tracé de référence (Voiture 0, e-DC) est dans events/{code}/ref/track. Aucune sonnerie : bandeau seulement.
+        const etr = { code: null, subs: [], tr: new Map(), trk: null, ref: null, pr: null, cfg: ET.cfg(null), ack: '', log: [], last: {}, open: false, err: '' };
+        function etResub(code) {
+            if (code === etr.code) return;
+            etr.subs.forEach(u => { try { u(); } catch (e) {} });
+            etr.subs = []; etr.tr = new Map(); etr.trk = null; etr.ref = null; etr.pr = null; etr.code = code; etr.log = []; etr.last = {}; etr.err = '';
+            if (!code) { etRender(); return; }
+            const { fs, doc, collection, onSnapshot } = window.FB;
+            etr.subs.push(onSnapshot(collection(fs, 'events', code, 'trace'), snap => {
+                const now = Date.now();
+                snap.docChanges().forEach(ch => { if (ch.type === 'removed') etr.tr.delete(ch.doc.id); else etr.tr.set(ch.doc.id, { ...ch.doc.data(), _got: now }); });
+                etr.err = ''; etRender();
+            }, e => { etr.err = e && e.code === 'permission-denied' ? 'e-Trace refusé : ajoutez le bloc « trace » aux règles de sécurité.' : ''; etRender(); }));
+            etr.subs.push(onSnapshot(doc(fs, 'events', code, 'public', 'track'), snap => { etr.trk = snap.exists() ? { ...snap.data(), _got: Date.now() } : null; etRender(); }, () => {}));
+            etr.subs.push(onSnapshot(doc(fs, 'events', code, 'ref', 'track'), snap => { etr.ref = snap.exists() ? snap.data() : null; etr.pr = ET.prep(etr.ref); etRender(); }, () => {}));
+            etr.subs.push(onSnapshot(doc(fs, 'events', code), snap => { etr.cfg = ET.cfg(snap.exists() ? snap.data() : null); }, () => {}));
+        }
+        function etTraceOf(bib) { let b = null; for (const t of etr.tr.values()) if (String(t.bib) === String(bib) && (!b || (t.t || 0) > (b.t || 0))) b = t; return b; }
+        function etAlert() {
+            const t = etr.trk; if (!t || t.status !== 'run' || !t.bib) return null;
+            const T = etTraceOf(t.bib), a = ET.alertState(t, T, etr.pr, etr.cfg);
+            return a ? { ...a, bib: String(t.bib), name: t.name || '', T, key: t.bib + '|' + t.startAt } : null;
+        }
+        function etWhere(T) { return T && etr.pr && Number.isFinite(T.d) ? ET.where(etr.pr, T.d) : ''; }
+        function etJournal(a) {
+            // journal des changements d'état (arrêt, arrêt prolongé, position perdue, reprise)
+            const k = a ? a.key : '', lvl = a ? a.lvl : '';
+            if (!k) return;
+            const prev = etr.last[k];
+            if (prev === lvl) return;
+            etr.last[k] = lvl;
+            const txt = { orange: 'Arrêt détecté (orange)', red: 'Arrêt prolongé (rouge)', lost: 'Position perdue (violet)', ok: prev && prev !== 'none' ? 'Reprise du mouvement' : 'Suivi actif' }[lvl];
+            if (!txt) return;
+            etr.log.unshift({ at: Date.now(), bib: a.bib, txt, where: etWhere(a.T), lvl });
+            if (etr.log.length > 60) etr.log.length = 60;
+        }
+        function etAck() { const a = etAlert(); if (a) { etr.ack = a.key + '|' + a.lvl; etr.log.unshift({ at: Date.now(), bib: a.bib, txt: 'Pris en compte par le PC course', lvl: 'ack' }); } etRender(); }
+        function etShowPlan() { if (evTab !== 'course') setEvTab('course'); setTimeout(() => { const s = document.getElementById('etraceSection'); if (s) s.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 50); }
+        function etRender() {
+            const sec = document.getElementById('etraceSection'), ban = document.getElementById('etAlert');
+            if (!sec || !ban) return;
+            const a = etAlert();
+            etJournal(a);
+            // bandeau en haut de page, visible quel que soit l'onglet
+            const show = a && ['orange', 'red', 'lost'].includes(a.lvl);
+            const collapsed = show && etr.ack === a.key + '|' + a.lvl;
+            if (show) {
+                const c = ET.COL[a.lvl], w = etWhere(a.T);
+                const title = a.lvl === 'lost' ? 'Position perdue' : a.lvl === 'red' ? `Arrêt prolongé · arrêté depuis ${a.dur} s` : `Arrêté depuis ${a.dur} s`;
+                const sub = [esc(a.name), a.lvl === 'lost' ? `aucune position depuis ${a.age} s` : '', w ? esc(w) : '', a.T && a.T.acc ? `précision ± ${esc(a.T.acc)} m` : ''].filter(Boolean).join(' · ');
+                ban.innerHTML = collapsed
+                    ? `<div style="background:${c}" class="rounded-xl px-4 py-2 flex flex-wrap items-center gap-3 text-white text-sm font-semibold shadow-lg"><span class="font-black">n° ${esc(a.bib)}</span><span>${esc(title)}</span><span class="opacity-80">pris en compte</span><button type="button" onclick="etShowPlan()" class="ml-auto underline">Voir sur le plan</button></div>`
+                    : `<div style="background:${c};box-shadow:0 0 0 4px ${c}55" class="rounded-2xl px-5 py-4 flex flex-wrap items-center gap-4 text-white">
+                        <span class="text-5xl font-black bg-white rounded-xl px-3 leading-tight" style="color:${c}">${esc(a.bib)}</span>
+                        <span class="grid"><b class="text-3xl font-black uppercase tracking-wide">${esc(title)}</b><span class="text-base opacity-90">${sub}</span></span>
+                        <span class="ml-auto flex gap-2"><button type="button" onclick="etShowPlan()" class="border-2 border-white rounded-xl px-4 py-2 font-bold">Voir sur le plan</button><button type="button" onclick="etAck()" class="bg-white rounded-xl px-4 py-2 font-bold" style="color:${c}">Pris en compte</button></span></div>`;
+            } else ban.innerHTML = '';
+            ban.classList.toggle('hidden', !show);
+            // section e-Trace (onglet Course)
+            const on = !!etr.code;
+            sec.querySelector('#etOff').classList.toggle('hidden', on);
+            sec.querySelector('#etMain').classList.toggle('hidden', !on);
+            if (!on) return;
+            const now = Date.now(), t = etr.trk, T = a && a.T;
+            let st;
+            if (!t || t.status !== 'run') st = '<b class="text-slate-200">Piste libre</b>';
+            else if (a && a.lvl === 'none') st = `<b class="text-slate-200">En piste : n° ${esc(t.bib)} ${esc(t.name || '')}</b> <span class="text-slate-400">· pas de téléphone e-Trace pour ce pilote</span>`;
+            else st = `<b style="color:${ET.COL[a.lvl] === ET.COL.ok ? '#7dd99a' : ET.COL[a.lvl]}">En piste : n° ${esc(t.bib)} ${esc(t.name || '')}</b> <span class="text-slate-400">· ${a.lvl === 'ok' ? 'suivi actif' : esc(ET.LBL[a.lvl] || '')}${etWhere(T) ? ' · ' + esc(etWhere(T)) : ''}</span>`;
+            sec.querySelector('#etState').innerHTML = st;
+            const dots = T && a ? [{ lat: T.lat, lng: T.lng, color: ET.COL[a.lvl] || ET.COL.ok, label: 'N° ' + a.bib, pulse: a.lvl !== 'ok' }] : [];
+            sec.querySelector('#etPlan').innerHTML = ET.svg(etr.pr, dots, { road: '#334155', chrono: '#60a5fa', liaison: '#64748b', ink: '#e2e8f0', muted: '#94a3b8', bg: '#1e293b', mark: '#3b82f6' });
+            sec.querySelector('#etRef').textContent = etr.ref ? `${etr.ref.name || 'Tracé'} · ${etr.pr ? ET.km(etr.pr.L) : ''} · enregistré ${etr.ref.at ? 'le ' + new Date(etr.ref.at).toLocaleDateString('fr-FR') : ''}${etr.ref.by ? ' par ' + etr.ref.by : ''}` : 'aucun : le DC l\'enregistre dans e-DC, onglet « Voiture 0 »';
+            const phones = [...etr.tr.values()].sort((x, y) => (+x.bib || 0) - (+y.bib || 0));
+            sec.querySelector('#etPhones').innerHTML = phones.length ? phones.map(p => {
+                const age = Math.round((now - p._got) / 1000 + (p.fa || 0)), ok = age <= etr.cfg.slow + 20;
+                return `<div class="flex justify-between gap-2"><span><b>n° ${esc(p.bib)}</b> ${esc(p.name || '')}</span><span class="${ok ? 'text-emerald-300' : 'text-slate-500'} text-xs">${ok ? '✔ prêt' : 'sans nouvelles'} · ${age > 3600 ? '> 1 h' : age + ' s'} · ± ${esc(p.acc)} m</span></div>`;
+            }).join('') : '<div class="text-slate-500">Aucun téléphone pour le moment. Les pilotes volontaires rejoignent l\'épreuve dans e-Trace avec le code et leur n° ; acceptez-les dans « Téléphones des postes ».</div>';
+            const lc = { orange: 'text-amber-300', red: 'text-rose-300', lost: 'text-violet-300', ok: 'text-emerald-300', ack: 'text-slate-400' };
+            sec.querySelector('#etLog').innerHTML = etr.log.length ? etr.log.map(l => `<div class="flex gap-3"><span class="font-mono text-slate-500">${esc(new Date(l.at).toLocaleTimeString('fr-FR'))}</span><span class="${lc[l.lvl] || ''}">n° ${esc(l.bib)} · ${esc(l.txt)}${l.where ? ' · ' + esc(l.where) : ''}</span></div>`).join('') : '<div class="text-slate-500">Rien à signaler.</div>';
+            sec.querySelector('#etErr').textContent = etr.err;
+            sec.querySelector('#etCfg').textContent = `Orange dès ${etr.cfg.orange} s d'arrêt · rouge à ${etr.cfg.red} s · violet après ${etr.cfg.lost} s sans position · aucune sonnerie.`;
+        }
+        setInterval(() => { if (etr.code) etRender(); }, 1000);
         // ===================== Fichiers FDS reçus par courriel =====================
         // Un script Google (compte de l'ASAT) dépose dans inbox/ chaque pièce jointe .fds envoyée depuis l'iPad (Smart Chrono).
         const inbox = { sub: null, docs: [], err: '' };
@@ -2499,6 +2780,7 @@
         function liveError(e) { liveErrMsg = (e && e.code === 'permission-denied') ? 'Accès refusé par la base : vérifiez l\'adresse du compte dans les règles de sécurité.' : 'Liaison interrompue (réseau) : reprise automatique.'; renderLive(); }
         function liveResub() {
             const code = window.FB && fbUser && view === 'event' ? (state.liveCode || null) : null;
+            etResub(code);
             if (code === liveSubCode) return;
             liveSubs.forEach(u => { try { u(); } catch (e) {} });
             liveSubs = []; liveDevices = []; liveSubCode = code; sync.code = null; liveListSig = ''; liveErrMsg = ''; liveCount = { infr: 0, rep: 0 }; liveFirst = {};
@@ -2706,7 +2988,7 @@
             el('liveNameHint').textContent = state.meta.name ? '' : 'Conseil : donnez d\'abord un nom à l\'événement, le code en est tiré.';
             const pend = liveDevices.filter(d => d.status === 'pending');
             const st = el('liveState');
-            st.textContent = !has ? 'Hors ligne' : !logged ? 'Non connecté' : !code ? 'Connecté · liaison fermée' : liveErrMsg ? 'Liaison perturbée' : `En direct · ${liveDevices.filter(d => d.status === 'ok' && d.role !== 'dc').length} poste(s)` + ((n => n ? ` + ${n} écran${n > 1 ? 's' : ''} DC` : '')(liveDevices.filter(d => d.status === 'ok' && d.role === 'dc').length));
+            st.textContent = !has ? 'Hors ligne' : !logged ? 'Non connecté' : !code ? 'Connecté · liaison fermée' : liveErrMsg ? 'Liaison perturbée' : `En direct · ${liveDevices.filter(d => d.status === 'ok' && d.role !== 'dc' && d.role !== 'trace').length} poste(s)` + ((n => n ? ` + ${n} écran${n > 1 ? 's' : ''} DC` : '')(liveDevices.filter(d => d.status === 'ok' && d.role === 'dc').length)) + ((n => n ? ` + ${n} e-Trace` : '')(liveDevices.filter(d => d.status === 'ok' && d.role === 'trace').length));
             st.className = 'text-xs font-bold px-3 py-1 rounded-full ' + (code && !liveErrMsg ? 'bg-emerald-500/20 text-emerald-200' : logged ? 'bg-amber-500/20 text-amber-200' : 'bg-slate-700 text-slate-300');
             const badge = el('liveTabBadge');
             badge.textContent = pend.length ? `${pend.length} en attente` : ''; badge.classList.toggle('hidden', !pend.length);
@@ -2727,7 +3009,7 @@
                 const [t, c] = lbl[d.status] || ['?', 'text-slate-400'];
                 const btn = (label, stt, cls) => `<button type="button" onclick="liveSetDevice('${esc(d.id)}','${stt}')" class="${cls} px-2 py-1 rounded-lg text-xs font-bold">${label}</button>`;
                 return `<div class="flex flex-wrap items-center justify-between gap-2 ${d.status === 'pending' ? 'bg-amber-500/10 rounded-lg p-2' : ''}">
-                    <span><b>${d.role === 'dc' ? '🏁 ' + ({ dcs: 'DC stagiaire', cs: 'Collège des commissaires sportifs' }[d.fn] || 'Directeur de course') : 'Poste ' + esc(d.poste || '?')}</b> · ${esc(d.who || 'sans nom')} <span class="${c} text-xs font-semibold ml-1">${t}</span></span>
+                    <span><b>${d.role === 'dc' ? '🏁 ' + ({ dcs: 'DC stagiaire', cs: 'Collège des commissaires sportifs' }[d.fn] || 'Directeur de course') : d.role === 'trace' ? '📍 e-Trace n° ' + esc(d.bib || '?') : 'Poste ' + esc(d.poste || '?')}</b> · ${esc(d.role === 'trace' ? (String(d.who || '').replace(/^n° \d+ · /, '') || 'pilote') : (d.who || 'sans nom'))} <span class="${c} text-xs font-semibold ml-1">${t}</span></span>
                     <span class="space-x-1">${d.status !== 'ok' ? btn('Accepter', 'ok', 'bg-emerald-600 hover:bg-emerald-500 text-white') : ''}${d.status !== 'refused' ? btn(d.status === 'ok' ? 'Retirer' : 'Refuser', 'refused', 'bg-rose-500/20 hover:bg-rose-600 text-rose-200 hover:text-white') : ''}</span></div>`;
             }).join('') : '<div class="text-slate-500">Aucun téléphone pour le moment. Chaque commissaire saisit le code dans sa page puis touche « Rejoindre ».</div>';
         }
