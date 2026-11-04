@@ -1245,6 +1245,7 @@ const ET = (() => {
                 if (inf.bib !== driver.number) continue;
                 const slot = heatToSlot(inf.heat);
                 const s = slot >= 0 ? res.slots[slot] : null;
+                if (s && s.dnf) { s.infs = (s.infs || []).concat([inf]); continue; }   // DNF / DSQ : prime sur toute pénalité
                 if (slot >= 0 && !isTrialSlot(slot) && (!s || s.gap)) { (res.pending = res.pending || {})[slot] = (res.pending[slot] || []).concat([inf]); continue; }
                 if (!s || s.gap || isTrialSlot(slot)) continue;
                 s.infs = (s.infs || []).concat([inf]);
@@ -1264,7 +1265,8 @@ const ET = (() => {
             if (slot < 0) { out.text = `${heatLabel(inf.heat)} n'existe pas dans le format de l'épreuve`; out.warn.push('manche à corriger'); return out; }
             if (isTrialSlot(slot)) { out.text = 'Essai : sans effet sur le classement'; return out; }
             const s = derive(d).slots[slot];
-            if (!s || s.gap) out.text = `En attente du temps de ${slotLong(slot)}`;
+            if (s && s.dnf) out.text = `Sans effet : ${s.label} en ${slotLong(slot)} (prime sur la pénalité)`;
+            else if (!s || s.gap) out.text = `En attente du temps de ${slotLong(slot)}`;
             else if (PEN_TYPES[inf.type].cancels) { out.ok = true; out.text = `Manche annulée (temps ${fmt(s.t)} non retenu)`; }
             else { out.ok = true; out.text = `+${PEN_TYPES[inf.type].sec} s sur ${fmt(s.t)} → ${fmt(s.t + s.pen)}`; }
             // cohérence de l'heure avec les clôtures
@@ -2078,12 +2080,12 @@ const ET = (() => {
             const pd = x.pending && x.pending[i];
             if (x.running && x.running.slot === i && (!s || s.auto)) return td(`<span class="tv runn" title="Pilote parti, en attente de son arrivée${x.running.p.ts ? ' (départ ' + hhmm(new Date(x.running.p.ts).toISOString()) + ')' : ''}"><span class="dots"><i>.</i><i>.</i><i>.</i></span>${pd ? pendSup(pd) : ''}</span>`);
             if (d.source !== 'fds' && !s && !pd) return td(`<button class="tv pend" style="border-color:transparent" onclick="openCellMenu(event,'${bib}',${i})" title="En attente du collage webresults">—</button>`);
-            if (pd && (!s || s.auto)) return td(`<button class="tv pend" onclick="openCellMenu(event,'${bib}',${i})" title="${esc(pendTitle(pd))}">${closed ? `<span class="tnote text-rose-400">${noTimeLabel(d.number, i)}</span>` : '—'}${pendSup(pd)}</button>`);
+            if (pd && (!s || (s.auto && !s.dnf))) return td(`<button class="tv pend" onclick="openCellMenu(event,'${bib}',${i})" title="${esc(pendTitle(pd))}">${closed ? `<span class="tnote text-rose-400">${noTimeLabel(d.number, i)}</span>` : '—'}${pendSup(pd)}</button>`);
             const noTime = (title, lbl) => td(`<button class="tv dns ${lbl === 'DSQ' ? 'dsq' : ''}" onclick="openCellMenu(event,'${bib}',${i})" title="${esc(title)}">${esc(lbl)}</button>`);
             if (!s) return closed ? noTime('Manche clôturée sans temps pour ce pilote', noTimeLabel(d.number, i)) : td('<span class="text-slate-600">—</span>');
             if (s.gap && s.auto) return s.cancelled
                 ? td('<span class="tnote text-rose-300" title="Le temps de cette manche a été écarté">Annulée</span>')
-                : s.dnf ? noTime(`${s.label === 'DSQ' ? 'Disqualifié (ELIM sur webresults)' : s.label + ' déclaré par l\'opérateur'} (passage FDS ${s.p.run})`, s.label) : noTime('Manche clôturée sans temps pour ce pilote', noTimeLabel(d.number, i));
+                : s.dnf ? noTime(`${s.label === 'DSQ' ? 'Disqualifié (ELIM sur webresults)' : s.label + ' déclaré par l\'opérateur'} (passage FDS ${s.p.run})${s.infs ? ' — pénalité de commissaire sans effet' : ''}`, s.label) : noTime('Manche clôturée sans temps pour ce pilote', noTimeLabel(d.number, i));
             if (s.gap) return td(`<button class="tv cut" style="text-decoration:none" onclick="openCellMenu(event,'${bib}',${i})" title="Manche marquée non courue / annulée">non courue</button>`);
             if (s.ep) return td(`<button class="tv cut" onclick="openCellMenu(event,'${bib}',${i})" title="Erreur de parcours relevée par ${esc(posteTxt(s.ep))}">${fmt(s.t)}<sup class="ep">EP</sup></button>`);
             const best = !isTrial && Number.isFinite(x.__best) && Math.abs(s.t + (s.pen || 0) - x.__best) < 1e-9;
@@ -2141,7 +2143,8 @@ const ET = (() => {
                     h += b('→ Décaler vers la manche suivante', `addGap('${esc(d.number)}',${i})`);
                 }
             } else if (s && s.gap && s.auto && s.dnf) {
-                h += `<br><span class="text-rose-300">${s.label === 'DSQ' ? 'Disqualifié dans cette manche (ELIM sur webresults)' : esc(s.label) + ' déclaré par l\'opérateur'} · passage FDS ${s.p.run}</span></div>`
+                h += `<br><span class="text-rose-300">${s.label === 'DSQ' ? 'Disqualifié dans cette manche (ELIM sur webresults)' : esc(s.label) + ' déclaré par l\'opérateur'} · passage FDS ${s.p.run}</span>`
+                   + (s.infs || []).map(inf => `<br><span class="text-slate-400">${PEN_TYPES[inf.type].label}${PEN_TYPES[inf.type].sec ? ' +' + PEN_TYPES[inf.type].sec + ' s' : ''} · ${esc(inf.manual ? 'saisie au PC course' : 'poste ' + inf.poste)} · sans effet (le ${esc(s.label)} prime)</span>`).join('') + '</div>'
                    + b(s.label === 'DSQ' ? '✕ Ignorer cette disqualification (erreur de saisie)' : `✕ Ignorer ce ${esc(s.label)} (passage refait)`, `setDecision('${s.key}','excluded')`);
             } else if ((!s || (s.gap && s.auto && !s.cancelled)) && i <= state.closedThrough && !(x.pending && x.pending[i]) && d.source === 'fds') {
                 const cur = noTimeLabel(d.number, i);
@@ -3070,7 +3073,7 @@ const ET = (() => {
                     const pp = pd ? (pd.some(q => PEN_TYPES[q.type].cancels) ? -1 : pd.reduce((a, q) => a + PEN_TYPES[q.type].sec, 0)) : 0;
                     let o;
                     if (x.running && x.running.slot === i && (!s || s.auto)) o = { k: 'run' };
-                    else if (pd && (!s || s.auto)) o = { k: 'pend', l: closed ? noTimeLabel(d.number, i) : '' };
+                    else if (pd && (!s || (s.auto && !s.dnf))) o = { k: 'pend', l: closed ? noTimeLabel(d.number, i) : '' };
                     else if (!s) o = { k: closed && d.source === 'fds' ? noTimeLabel(d.number, i).toLowerCase() : '' };
                     else if (s.gap && s.auto) o = s.cancelled ? { k: 'cxl' } : { k: (s.dnf ? s.label : noTimeLabel(d.number, i)).toLowerCase() };
                     else if (s.gap) o = { k: 'nc' };
