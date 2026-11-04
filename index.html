@@ -49,6 +49,14 @@
         .tv.dns { color:#fb7185; font-family: ui-sans-serif, system-ui, sans-serif; font-size: 13px; font-weight: 800; letter-spacing: .06em; }
         .tv.pend { color:#64748b; border: 1px dashed rgba(148,163,184,.45); font-weight: 600; }
         .tv.pend sup { font-size: 13px; }
+        /* couleurs des manches : en-tête de colonne et bouton de clôture */
+        .heat-pill { display:inline-block; border-radius:7px; padding:3px 9px; color:#fff; font-weight:800; letter-spacing:.03em; background: var(--hc); line-height:1.25; }
+        .heat-pill.cur { box-shadow: 0 0 0 2px #0f172a, 0 0 0 4px var(--hc); }
+        .colsort { background:none; border:1px solid #475569; border-radius:7px; padding:3px 8px; color:#e2e8f0; font-weight:700; font-size:12px; text-transform:uppercase; letter-spacing:.05em; display:inline-flex; gap:5px; align-items:center; }
+        .colsort:hover { border-color:#94a3b8; } .colsort.on { border-color:#f59e0b; color:#fbbf24; }
+        .colsort:focus-visible { outline:3px solid #38bdf8; outline-offset:2px; }
+        .stchip { display:inline-flex; align-items:center; gap:8px; border-radius:12px; padding:8px 12px; font-size:13.5px; font-weight:600; border:1px solid #334155; background:#1e293b; color:#e2e8f0; }
+        .stchip:hover { border-color:#64748b; } .stchip i { width:9px; height:9px; border-radius:50%; flex:none; } .stchip small { color:#94a3b8; font-weight:500; font-size:13px; }
         .evtab { padding: 9px 18px; border-radius: 12px; font-weight: 700; font-size: 15px; border: 1px solid #334155; background:#1e293b; color:#94a3b8; }
         .evtab:hover { color:#e2e8f0; border-color:#475569; }
         .evtab[aria-selected="true"] { background:#f59e0b; color:#0f172a; border-color:#f59e0b; }
@@ -62,6 +70,16 @@
         #cellMenu button { display:block; width:100%; text-align:left; padding: 7px 9px; border-radius: 7px; color:#e2e8f0; }
         #cellMenu button:hover, #cellMenu button:focus-visible { background:#1e293b; outline: none; }
         #cellMenu .sep { height:1px; background:#1e293b; margin: 4px 0; }
+        @media print {
+            #entrySection table { min-width: 0 !important; font-size: 10px !important; }
+            #driversTableBody td { height: auto !important; }
+            #entrySection th, #entrySection td { padding: 3px 4px !important; }
+            .colsort { border: 0 !important; padding: 0 !important; color: #000 !important; font-size: 10px !important; }
+            .colsort span { display: none; }
+            .heat-pill { -webkit-print-color-adjust: exact; print-color-adjust: exact; padding: 2px 6px; }
+            #entrySection .tv { font-size: 11px !important; }
+            #entrySection .overflow-x-auto { overflow: visible !important; }
+        }
         @media print { .tv { border: 0 !important; background: none !important; color: #000 !important; padding: 0; } #cellMenu { display: none !important; } }
         /* Analyse des temps — palette catégorielle validée sur le fond de la page (#1e293b) */
         .viz { --s1:#3987e5; --s2:#d95926; --s3:#199e70; --s4:#c98500; --s5:#d55181; --s6:#008300; --s7:#9085e9; --s8:#e66767;
@@ -96,56 +114,39 @@
         <!-- e-Trace : bandeau d'arrêt en piste (sans sonnerie) -->
         <div id="etAlert" class="hidden no-print" style="position:sticky;top:8px;z-index:60"></div>
 
-        <!-- En-tête -->
-        <header class="flex flex-wrap justify-between items-center bg-slate-800 p-6 rounded-2xl shadow-xl border border-slate-700 gap-4 no-print">
-            <div class="shrink-0" style="flex-shrink:0;">
-                <h1 class="text-3xl font-black text-amber-400 tracking-wider flex items-center gap-3 whitespace-nowrap" style="display:flex;align-items:center;gap:0.9rem;white-space:nowrap;"><span aria-hidden="true" style="width:44px;height:32px;border-radius:5px;flex-shrink:0;background:repeating-conic-gradient(#fbbf24 0 25%,#0f172a 0 50%) 0 0/16px 16px;border:3px solid #fbbf24"></span><span>PC <span class="text-white">COURSE</span></span></h1>
-                <p class="text-slate-400 text-sm">Essai + 4 manches, import webresults, pénalités &amp; classements H/F</p>
+
+        <!-- En-tête : association organisatrice (logo cliquable), événement affiché, sauvegarde -->
+        <header class="flex flex-wrap justify-between items-center bg-slate-800 px-6 py-4 rounded-2xl shadow-xl border border-slate-700 gap-4 no-print">
+            <div class="flex items-center gap-4" style="flex-shrink:0">
+                <button type="button" id="orgLogoBtn" onclick="toggleOrg()" class="rounded-xl overflow-hidden bg-white shrink-0 focus:outline-none focus:ring-4 focus:ring-amber-400" title="Association organisatrice : cliquer pour changer"><img id="orgLogo" src="" alt="Logo de l'association organisatrice" style="height:56px;width:auto;display:block"></button>
+                <div>
+                    <h1 class="text-3xl font-black text-amber-400 tracking-wider whitespace-nowrap">PC <span class="text-white">COURSE</span></h1>
+                    <p id="orgName" class="text-slate-400 text-sm"></p>
+                </div>
             </div>
-            <div class="flex flex-wrap gap-2 justify-start xl:justify-end" style="flex:1 1 420px;">
-                <button id="btnPaste" onclick="openPasteModal()" class="bg-amber-500 hover:bg-amber-400 text-slate-950 px-3 py-2 rounded-xl font-bold transition shadow-md text-xs sm:text-sm">
-                    📋 Coller webresults
-                </button>
-                <label id="btnFds" class="bg-teal-600 hover:bg-teal-500 text-white px-3 py-2 rounded-xl font-bold transition shadow-md text-xs sm:text-sm cursor-pointer flex items-center" title="Fichier .fds exporté par l'appli FDS TBox Chrono (ou le .csv des résultats)">
-                    📥 Importer fichier FDS
-                    <input type="file" id="fdsFile" onchange="importFdsFile(event)" class="hidden">
-                </label>
-                <button id="btnPastePen" onclick="openPenModal()" class="bg-orange-600 hover:bg-orange-500 text-white px-3 py-2 rounded-xl font-bold transition shadow-md text-xs sm:text-sm">
-                    🚩 Coller pénalités
-                </button>
-                <button id="btnPrintRank" onclick="printRankingsOnly()" class="bg-sky-600 hover:bg-sky-500 text-white px-3 py-2 rounded-xl font-semibold transition shadow-md text-xs sm:text-sm">
-                    🏆 PDF Classements
-                </button>
-                <button id="btnPrintEntry" onclick="printEntryOnly()" class="bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-2 rounded-xl font-semibold transition shadow-md text-xs sm:text-sm">
-                    📄 PDF Saisie seule
-                </button>
+            <div class="flex flex-wrap items-center gap-2 justify-end" style="flex:1 1 420px;min-width:0">
+                <label for="eventSelect" class="sr-only">Événement affiché</label>
+                <select id="eventSelect" onchange="switchEvent(this.value)" class="flex-1 min-w-0 bg-slate-900 border border-slate-700 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:border-amber-400" style="flex:1 1 280px"></select>
+                <button onclick="newEvent()" class="bg-amber-500 hover:bg-amber-400 text-slate-950 px-3 py-2.5 rounded-xl font-bold text-sm transition shadow-md">➕ Nouvel événement</button>
                 <button id="btnExportEvent" onclick="exportData()" class="bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-2 rounded-xl font-semibold transition shadow-md text-xs sm:text-sm">
-                    💾 Sauvegarder l'événement
-                </button>
-                <label class="bg-violet-600 hover:bg-violet-500 text-white px-3 py-2 rounded-xl font-semibold transition shadow-md text-xs sm:text-sm cursor-pointer flex items-center">
-                    📂 Importer
-                    <input type="file" id="importFile" accept=".json" onchange="importData(event)" class="hidden">
-                </label>
-                <button id="btnReset" onclick="resetAll()" class="bg-rose-600 hover:bg-rose-500 text-white px-3 py-2 rounded-xl font-semibold transition shadow-md text-xs sm:text-sm">
-                    🗑️ Vider l'événement
+                    💾 Sauvegarder
                 </button>
             </div>
         </header>
 
+        <!-- Onglets de l'événement -->
+        <nav id="evTabs" class="flex gap-2 no-print" role="tablist" aria-label="Vues de l'événement">
+            <button type="button" role="tab" data-tab="parametres" onclick="setEvTab('parametres')" class="evtab">⚙️ Paramètres</button>
+            <button type="button" role="tab" data-tab="course" onclick="setEvTab('course')" class="evtab">🏁 Course</button>
+            <button type="button" role="tab" data-tab="connexions" onclick="setEvTab('connexions')" class="evtab">🔌 Connexions <span id="liveTabBadge" class="hidden text-xs font-bold bg-sky-500 text-white rounded-full px-2 py-0.5 ml-1"></span></button>
+            <button type="button" role="tab" data-tab="etrace" onclick="setEvTab('etrace')" class="evtab">📍 e-Trace <span class="text-[10px] font-bold bg-violet-600 text-white rounded px-1.5 py-0.5 align-middle">BÊTA</span> <span id="etTabDot" class="hidden inline-block w-2.5 h-2.5 rounded-full align-middle"></span></button>
+            <button type="button" role="tab" data-tab="pilotes" onclick="setEvTab('pilotes')" class="evtab">👥 Pilotes <span id="evTabCount" class="text-xs font-semibold opacity-80"></span></button>
+            <button type="button" role="tab" data-tab="classements" onclick="setEvTab('classements')" class="evtab">🏆 Classements</button>
+        </nav>
+
         <!-- Configuration de l'Événement -->
-        <section class="bg-slate-800 p-6 rounded-2xl shadow-xl border border-slate-700 no-print">
-            <h2 class="text-xl font-bold mb-4 text-amber-300">Paramètres de l'Événement</h2>
-            <div class="flex flex-col sm:flex-row sm:items-end gap-3 mb-4">
-                <div class="flex-1">
-                    <label for="eventSelect" class="block text-xs font-medium text-slate-400 mb-1">Événement affiché</label>
-                    <select id="eventSelect" onchange="switchEvent(this.value)" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:border-amber-400"></select>
-                </div>
-                <div class="flex flex-wrap gap-2">
-                    <button onclick="newEvent()" class="bg-amber-500 hover:bg-amber-400 text-slate-950 px-3 py-2.5 rounded-xl font-bold text-sm transition shadow-md">➕ Nouvel événement</button>
-                    <button id="btnDeleteEvent" onclick="deleteEvent()" class="bg-rose-500/20 hover:bg-rose-600 text-rose-300 hover:text-white px-3 py-2.5 rounded-xl font-semibold text-sm transition">🗑️ Supprimer l'événement</button>
-                    <button onclick="exportAll()" class="bg-emerald-500/20 hover:bg-emerald-600 text-emerald-300 hover:text-white px-3 py-2.5 rounded-xl font-semibold text-sm transition" title="Tous les événements et la mémoire des pilotes, dans un seul fichier">💾 Sauvegarde complète</button>
-                </div>
-            </div>
+        <section id="paramsSection" class="bg-slate-800 p-6 rounded-2xl shadow-xl border border-slate-700 no-print">
+            <h2 class="text-xl font-bold mb-4 text-amber-300">⚙️ Paramètres de l'événement</h2>
             <div id="eventParamsGrid" class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                     <label class="block text-xs font-medium text-slate-400 mb-1">Nom de la Course / Événement</label>
@@ -167,6 +168,12 @@
                         <option value="1">1 manche</option><option value="2">2 manches</option><option value="3">3 manches</option><option value="4">4 manches</option><option value="5">5 manches</option><option value="6">6 manches</option>
                     </select>
                 </div>
+                <div>
+                    <label for="orgSelect" class="block text-xs font-medium text-slate-400 mb-1">Association organisatrice</label>
+                    <select id="orgSelect" onchange="setOrg(this.value)" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:border-amber-400">
+                        <option value="asat">ASAT · Association sportive automobile de Tahiti</option><option value="asap">ASAP · Association sportive automobile de Polynésie</option>
+                    </select>
+                </div>
                 <div class="sm:col-span-2">
                     <label class="inline-flex items-center gap-2 text-sm text-slate-300 cursor-pointer">
                         <input type="checkbox" id="inChampCheck" onchange="updateInChamp()" class="w-4 h-4 accent-amber-500">
@@ -176,12 +183,24 @@
             </div>
         </section>
 
-        <!-- Onglets de l'événement -->
-        <nav id="evTabs" class="flex gap-2 no-print" role="tablist" aria-label="Vues de l'événement">
-            <button type="button" role="tab" data-tab="course" onclick="setEvTab('course')" class="evtab">🏁 Course <span id="liveTabBadge" class="hidden text-xs font-bold bg-sky-500 text-white rounded-full px-2 py-0.5 ml-1"></span></button>
-            <button type="button" role="tab" data-tab="pilotes" onclick="setEvTab('pilotes')" class="evtab">👥 Pilotes <span id="evTabCount" class="text-xs font-semibold opacity-80"></span></button>
-            <button type="button" role="tab" data-tab="classements" onclick="setEvTab('classements')" class="evtab">🏆 Classements</button>
-        </nav>
+        <section id="manageSection" class="bg-slate-800 p-6 rounded-2xl shadow-xl border border-slate-700 no-print">
+            <h2 class="text-xl font-bold mb-2 text-slate-200">Gestion des événements</h2>
+            <p class="text-xs text-slate-400 mb-3">« Sauvegarder » enregistre l'événement affiché dans un fichier ; la sauvegarde complète réunit tous les événements et la mémoire des pilotes.</p>
+            <div class="flex flex-wrap gap-2">
+                <label class="bg-violet-600 hover:bg-violet-500 text-white px-3 py-2 rounded-xl font-semibold transition shadow-md text-xs sm:text-sm cursor-pointer flex items-center">
+                    📂 Importer un événement
+                    <input type="file" id="importFile" accept=".json" onchange="importData(event)" class="hidden">
+                </label>
+                <button onclick="exportAll()" class="bg-emerald-500/20 hover:bg-emerald-600 text-emerald-300 hover:text-white px-3 py-2.5 rounded-xl font-semibold text-sm transition" title="Tous les événements et la mémoire des pilotes, dans un seul fichier">💾 Sauvegarde complète</button>
+                <button id="btnReset" onclick="resetAll()" class="bg-rose-600 hover:bg-rose-500 text-white px-3 py-2 rounded-xl font-semibold transition shadow-md text-xs sm:text-sm">
+                    🗑️ Vider l'événement
+                </button>
+                <button id="btnDeleteEvent" onclick="deleteEvent()" class="bg-rose-500/20 hover:bg-rose-600 text-rose-300 hover:text-white px-3 py-2.5 rounded-xl font-semibold text-sm transition">🗑️ Supprimer l'événement</button>
+            </div>
+        </section>
+
+        <!-- Bandeau d'état (onglet Course) : liaison, pont, fichiers FDS, téléphones, e-Trace ; un clic ouvre l'onglet concerné -->
+        <div id="statusStrip" class="flex flex-wrap gap-2 no-print"></div>
 
 <section id="driverFormSection" class="hidden bg-slate-800 p-6 rounded-2xl shadow-xl border border-amber-500/40 no-print">
             <h2 id="formTitle" class="text-xl font-bold mb-1 text-amber-300">Ajouter un nouveau pilote</h2>
@@ -324,14 +343,26 @@
                         <div id="liveDevices" class="space-y-2 text-sm"></div>
                     </div>
                 </div>
-                <div id="fdsInboxBox" class="hidden mt-4 bg-slate-900/60 rounded-xl p-4 border border-teal-700/60">
-                    <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
-                        <div class="text-xs uppercase tracking-wider text-teal-300 font-semibold">📧 Fichiers FDS reçus par courriel</div>
-                        <label class="text-xs text-slate-300 flex items-center gap-2"><input type="checkbox" id="fdsAuto" onchange="fdsAutoToggle(this.checked)"> Importer automatiquement dans l'événement affiché <span id="fdsAutoInfo" class="text-slate-500"></span></label>
-                    </div>
-                    <div id="fdsInbox" class="space-y-1 text-sm"></div>
+            </div>
+        </section>
+
+        <section id="fdsSection" class="bg-slate-800 p-6 rounded-2xl shadow-xl border border-teal-700/60 no-print">
+            <div class="flex flex-wrap items-center justify-between gap-3 mb-3">
+                <h2 class="text-xl font-bold text-teal-300">📧 Fichiers FDS reçus par courriel</h2>
+                <div class="flex flex-wrap items-center gap-2">
+                    <label id="btnFds" class="bg-teal-600 hover:bg-teal-500 text-white px-3 py-2 rounded-xl font-bold transition shadow-md text-xs sm:text-sm cursor-pointer flex items-center" title="Fichier .fds exporté par l'appli FDS TBox Chrono (ou le .csv des résultats)">
+                    📥 Importer un fichier FDS
+                    <input type="file" id="fdsFile" onchange="importFdsFile(event)" class="hidden">
+                </label>
+                    <button type="button" id="fdsIgnoreAll" onclick="fdsIgnoreAll()" class="hidden bg-slate-700 hover:bg-slate-600 text-slate-100 px-3 py-2 rounded-xl font-semibold text-sm">Tout ignorer</button>
                 </div>
             </div>
+            <div id="fdsInboxBox">
+                <label class="text-xs text-slate-300 flex items-center gap-2 mb-2"><input type="checkbox" id="fdsAuto" onchange="fdsAutoToggle(this.checked)"> Importer automatiquement dans l'événement affiché <span id="fdsAutoInfo" class="text-slate-500"></span></label>
+                <div id="fdsInbox" class="space-y-1 text-sm"></div>
+                <p id="fdsIgnInfo" class="text-xs text-slate-500 mt-2"></p>
+            </div>
+            <div id="fdsOff" class="hidden text-sm text-slate-400">Connectez le PC course (onglet Connexions, liaison en direct) pour recevoir les fichiers envoyés par courriel depuis l'iPad. L'import d'un fichier enregistré sur cet ordinateur reste possible avec le bouton ci-dessus.</div>
         </section>
 
         <section id="etraceSection" class="bg-slate-800 p-6 rounded-2xl shadow-xl border border-violet-700/50 no-print">
@@ -362,8 +393,10 @@
 
         <section id="pontSection" class="bg-slate-800 p-6 rounded-2xl shadow-xl border border-indigo-700/60 no-print">
             <div class="flex flex-wrap items-center justify-between gap-3 mb-3">
-                <h2 class="text-xl font-bold text-indigo-300">🔗 Pont webresults (temps automatiques)</h2>
-                <span id="pontState" class="text-xs font-bold px-3 py-1 rounded-full bg-slate-700 text-slate-300">Inactif</span>
+                <h2 class="text-xl font-bold text-indigo-300">🔗 Pont webresults (temps automatiques) <span id="pontState" class="align-middle text-xs font-bold px-3 py-1 rounded-full bg-slate-700 text-slate-300">Inactif</span></h2>
+                <div class="flex items-center gap-2"><span class="text-xs text-slate-400">En secours :</span><button id="btnPaste" onclick="openPasteModal()" class="bg-amber-500 hover:bg-amber-400 text-slate-950 px-3 py-2 rounded-xl font-bold transition shadow-md text-xs sm:text-sm">
+                    📋 Coller webresults
+                </button></div>
             </div>
             <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 text-sm">
                 <div class="space-y-2 text-slate-300">
@@ -399,10 +432,17 @@
         </section>
 
         <!-- Titre Version Impression / Officiel -->
-        <div class="print-only text-center mb-6">
-            <h1 id="printRaceTitle" class="text-2xl font-bold text-black">Rapport Officiel</h1>
-            <p class="text-sm text-slate-600">Date : <span id="printRaceDate"></span></p>
-            <p id="printSubtitle" class="text-xs text-slate-500 italic mt-1"></p>
+        <!-- En-tête des PDF : logo de l'association organisatrice, nom de la course, date -->
+        <div class="print-only mb-6">
+            <div style="display:flex;align-items:center;gap:18px;border-bottom:2px solid #0f172a;padding-bottom:10px">
+                <img id="printLogo" src="" alt="" style="height:72px;width:auto;flex:none">
+                <div style="flex:1;min-width:0">
+                    <h1 id="printRaceTitle" class="text-2xl font-bold text-black">Rapport Officiel</h1>
+                    <p id="printOrg" class="text-sm text-slate-700"></p>
+                    <p class="text-sm text-slate-600">Date : <span id="printRaceDate"></span></p>
+                    <p id="printSubtitle" class="text-xs text-slate-500 italic mt-1"></p>
+                </div>
+            </div>
         </div>
 
         <!-- Formulaire d'ajout / modification de pilote -->
@@ -413,7 +453,9 @@
                     <h2 class="text-xl font-bold text-orange-300">🚩 Pénalités des commissaires</h2>
                     <p id="penSummary" class="text-sm text-slate-400 mt-1"></p>
                 </div>
-                <button onclick="openPenModal()" class="no-print bg-orange-600 hover:bg-orange-500 text-white px-3 py-2 rounded-xl font-bold text-sm shadow-md whitespace-nowrap">🚩 Coller pénalités</button>
+<button id="btnPastePen" onclick="openPenModal()" class="no-print whitespace-nowrap bg-orange-600 hover:bg-orange-500 text-white px-3 py-2 rounded-xl font-bold transition shadow-md text-xs sm:text-sm">
+                    🚩 Coller pénalités
+                </button>
             </div>
             <p class="text-xs text-slate-400 mb-3 no-print">Barème : contact plot de chicane +2 s · contact plot de demi-tour +5 s · erreur de parcours = manche annulée. Les infractions reçues sont appliquées automatiquement à la manche indiquée par le commissaire ; chacune reste visible ici et peut être modifiée ou annulée.</p>
             <div class="overflow-x-auto">
@@ -436,13 +478,11 @@
         <section id="entrySection" class="bg-slate-800 p-6 rounded-2xl shadow-xl border border-slate-700 overflow-x-auto">
             <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
                 <h2 class="text-xl font-bold text-amber-300">📋 Tableau des Temps <span id="sortTitle" class="text-base font-semibold text-slate-400">(par ordre de passage)</span></h2>
-                <div class="flex items-center gap-2 no-print" role="group" aria-label="Ordre d'affichage">
-                    <span class="text-sm font-semibold text-slate-300">Ordre :</span>
-                    <div class="inline-flex rounded-lg border border-slate-600 overflow-hidden text-sm font-semibold">
-                        <button type="button" data-sort="order" onclick="setTableSort('order')" class="sortbtn px-3 py-1.5">Passage</button>
-                        <button type="button" data-sort="best" onclick="setTableSort('best')" class="sortbtn px-3 py-1.5 border-l border-slate-600">Meilleur temps</button>
-                        <button type="button" data-sort="bib" onclick="setTableSort('bib')" class="sortbtn px-3 py-1.5 border-l border-slate-600">N° de course</button>
-                    </div>
+                <div class="flex flex-wrap items-center gap-2 no-print">
+                    <button type="button" data-sort="best" onclick="setTableSort('best')" class="sortbtn px-3 py-1.5 rounded-lg border border-slate-600 text-sm font-semibold">🏁 Trier par meilleur temps</button>
+                    <button id="btnPrintEntry" onclick="printEntryOnly()" class="bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-2 rounded-xl font-semibold transition shadow-md text-xs sm:text-sm">
+                    📄 PDF Saisie seule
+                </button>
                 </div>
             </div>
             <p class="text-xs text-slate-400 mb-4 no-print">
@@ -454,9 +494,9 @@
             <table class="w-full text-left border-collapse min-w-[1200px]">
                 <thead>
                     <tr id="entryHeadRow" class="border-b border-slate-700 text-slate-400 text-sm">
-                        <th class="p-3 w-14 text-center">Ordre</th>
-                        <th class="p-3 w-14">N°</th>
-                        <th class="p-3">Pilote</th>
+                        <th class="p-3 w-14 text-center"><button type="button" class="colsort" data-sort="order" onclick="setTableSort('order')">Ordre <span></span></button></th>
+                        <th class="p-3 w-14"><button type="button" class="colsort" data-sort="bib" onclick="setTableSort('bib')">N° <span></span></button></th>
+                        <th class="p-3"><button type="button" class="colsort" data-sort="name" onclick="setTableSort('name')">Pilote <span></span></button></th>
                         <th class="p-3" id="bestHeadCell">Passages écartés</th>
                         <th class="p-3">Genre</th>
                         <th class="p-3">Catégorie</th>
@@ -508,6 +548,9 @@
                 </select>
             </div>
             <span class="text-xs text-slate-400">Classement sur le meilleur temps des manches chronométrées, pénalités comprises (les essais ne sont pas comptabilisés).</span>
+            <button id="btnPrintRank" onclick="printRankingsOnly()" class="bg-sky-600 hover:bg-sky-500 text-white px-3 py-2 rounded-xl font-semibold transition shadow-md text-xs sm:text-sm">
+                    🏆 PDF Classements
+                </button>
         </div>
 
         <!-- Classements Séparés (Hommes & Femmes) -->
@@ -1695,7 +1738,7 @@ const ET = (() => {
         }
         function raceName() { return state.meta.name || 'Course automobile'; }
         function updateEventMetaUI() {
-            document.getElementById('printRaceTitle').innerText = `Rapport Officiel - ${raceName()}`;
+            document.getElementById('printRaceTitle').innerText = raceName();
             document.getElementById('printRaceDate').innerText = state.meta.date ? state.meta.date.split('-').reverse().join('/') : '-';
             document.getElementById('titleRankingMen').innerText = `🏆 Classement Hommes - ${raceName()}`;
             document.getElementById('titleRankingWomen').innerText = `🏆 Classement Femmes - ${raceName()}`;
@@ -1718,7 +1761,10 @@ const ET = (() => {
             document.getElementById('entrySection').classList.remove('hide-in-print');
             document.getElementById('rankingsSection').classList.add('hide-in-print');
             document.getElementById('printSubtitle').innerText = `Fiche des temps par ordre de passage — ${stageLabel()}`;
+            const pg = document.createElement('style'); pg.id = 'pageLandscape'; pg.textContent = '@page { size: A4 landscape; margin: 10mm; }';
+            document.head.appendChild(pg);
             window.print();
+            setTimeout(() => pg.remove(), 1000);
             setTimeout(() => document.getElementById('rankingsSection').classList.remove('hide-in-print'), 1000);
         }
 
@@ -1881,13 +1927,13 @@ const ET = (() => {
             for (const id of ['eventParamsGrid', 'raceSection', 'driverFormSection', 'penSection', 'entrySection', 'filterSection', 'rankingsSection', 'vizSection', 'btnPaste', 'btnPastePen', 'btnPrintRank', 'btnPrintEntry', 'btnExportEvent', 'btnReset', 'btnDeleteEvent'])
                 document.getElementById(id).classList.toggle('hidden', champ);
             document.getElementById('champSection').classList.toggle('hidden', !champ);
-            if (champ) { document.getElementById('liveSection').classList.add('hidden'); document.getElementById('pontSection').classList.add('hidden'); document.getElementById('etraceSection').classList.add('hidden'); }
+            if (champ) for (const id of ['liveSection', 'pontSection', 'etraceSection', 'fdsSection', 'paramsSection', 'manageSection', 'statusStrip']) document.getElementById(id).classList.add('hidden');
             document.getElementById('evTabs').classList.toggle('hidden', champ);
             document.getElementById('pilotsSection').classList.toggle('hidden', champ || evTab !== 'pilotes');
             if (champ) { renderChampionship(view.slice(6)); return; }
             // Course : déroulement, pénalités, tableau des temps, analyse ; Classements : filtre + classements H/F
-            const TAB_SECTIONS = { course: ['liveSection', 'etraceSection', 'pontSection', 'raceSection', 'penSection', 'entrySection', 'vizSection'], pilotes: [], classements: ['filterSection', 'rankingsSection'] };
-            for (const id of ['liveSection', 'etraceSection', 'pontSection', 'raceSection', 'driverFormSection', 'penSection', 'entrySection', 'filterSection', 'rankingsSection', 'vizSection'])
+            const TAB_SECTIONS = { parametres: ['paramsSection', 'manageSection'], course: ['statusStrip', 'raceSection', 'penSection', 'entrySection'], connexions: ['liveSection', 'fdsSection', 'pontSection'], etrace: ['etraceSection'], pilotes: [], classements: ['filterSection', 'rankingsSection', 'vizSection'] };
+            for (const id of ['paramsSection', 'manageSection', 'statusStrip', 'liveSection', 'fdsSection', 'etraceSection', 'pontSection', 'raceSection', 'driverFormSection', 'penSection', 'entrySection', 'filterSection', 'rankingsSection', 'vizSection'])
                 document.getElementById(id).classList.toggle('hidden', !(TAB_SECTIONS[evTab] || []).includes(id));
             // le formulaire ne sert plus qu'à modifier un pilote (bouton « Modifier » du tableau des temps)
             document.getElementById('driverFormSection').classList.toggle('hidden', evTab !== 'pilotes' || !document.getElementById('editingId').value);
@@ -1913,17 +1959,21 @@ const ET = (() => {
             renderInbox();
             renderPont();
             etRender();
+            renderOrg();
+            renderStrip();
         }
 
         function renderStatus(derived) {
             const c = state.closedThrough;
-            document.getElementById('raceStatus').innerHTML = `<b>Étape :</b> ${esc(stageLabel())}`;
+            document.getElementById('raceStatus').innerHTML = `<b>Étape :</b> ${esc(stageLabel())}` + (nTot() ? ` <span class="ml-2 inline-flex flex-wrap gap-1 align-middle">${Array.from({ length: nTot() }, (_, i) => `<span class="heat-pill text-[11px]${i === c + 1 ? ' cur' : ''}" style="--hc:${heatColor(i)};opacity:${i <= c ? .55 : 1}" title="${i <= c ? 'clôturé' : i === c + 1 ? 'en cours' : 'à venir'}">${slotShortLabel(i)}</span>`).join('')}</span>` : '');
             document.getElementById('lastImportInfo').textContent = state.lastImport ? `Dernier collage webresults à ${state.lastImport.hhmm} : ${state.lastImport.passages} passage(s), ${state.lastImport.drivers} pilote(s)` + (state.hasInter === false ? ' — course sans cellule intermédiaire : seul le critère des +25 % sert à repérer les passages douteux.' : '.') : 'Aucun collage webresults pour le moment.';
             const closeBtn = document.getElementById('closeBtn');
             const done = c >= nTot() - 1;
             closeBtn.disabled = done;
             closeBtn.classList.toggle('opacity-40', done);
             closeBtn.textContent = done ? '✅ Toutes les manches sont clôturées' : `✅ Clôturer ${slotName(c + 1)}`;
+            closeBtn.style.background = done ? '' : heatColor(c + 1);
+            closeBtn.classList.toggle('bg-emerald-600', done); closeBtn.classList.toggle('hover:bg-emerald-500', done);
             const reopenBtn = document.getElementById('reopenBtn');
             reopenBtn.disabled = c < 0;
             reopenBtn.classList.toggle('opacity-40', c < 0);
@@ -2296,7 +2346,8 @@ const ET = (() => {
             for (let i = 0; i < nTot(); i++) {
                 const th = document.createElement('th');
                 th.className = 'slot-head p-3 text-center ' + (i % 2 === 0 ? 'col-a' : 'col-b');
-                th.innerHTML = isTrialSlot(i) ? `${slotLong(i)}<br><span class="text-[10px] text-slate-500 font-normal">Non comptabilisé</span>` : slotLong(i);
+                const cur = i === state.closedThrough + 1 ? ' cur' : '';
+                th.innerHTML = isTrialSlot(i) ? `<span class="heat-pill${cur}" style="--hc:${heatColor(i)}">${slotLong(i)}</span><br><span class="text-[10px] text-slate-500 font-normal">Non comptabilisé</span>` : `<span class="heat-pill${cur}" style="--hc:${heatColor(i)}">${slotLong(i)}</span>`;
                 row.insertBefore(th, best);
             }
         }
@@ -2307,9 +2358,9 @@ const ET = (() => {
             if (state.cuts) for (const j of Object.keys(state.cuts)) if (+j > state.closedThrough) delete state.cuts[j];
             save(); renderAll();
         }
-        let tableSort = 'order';
-        try { const v = localStorage.getItem('chronocourse_tablesort'); if (['order', 'best', 'bib'].includes(v)) tableSort = v; } catch (e) {}
-        function setTableSort(v) { tableSort = v; try { localStorage.setItem('chronocourse_tablesort', v); } catch (e) {} renderAll(); }
+        let tableSort = 'order', tableDir = 1;
+        try { const v = localStorage.getItem('chronocourse_tablesort'); if (['order', 'best', 'bib', 'name'].includes(v)) tableSort = v; tableDir = localStorage.getItem('chronocourse_tabledir') === '-1' ? -1 : 1; } catch (e) {}
+        function setTableSort(v) { tableDir = tableSort === v ? -tableDir : 1; tableSort = v; try { localStorage.setItem('chronocourse_tablesort', v); localStorage.setItem('chronocourse_tabledir', String(tableDir)); } catch (e) {} renderAll(); }
         function renderTableBody(derived) {
             const tbody = document.getElementById('driversTableBody');
             if (state.drivers.length === 0) {
@@ -2322,9 +2373,12 @@ const ET = (() => {
             const sorted = [...state.drivers].sort(tableSort === 'best'
                 ? (a, b) => { const ba = derived.get(a.id).__best, bb = derived.get(b.id).__best; const fa = Number.isFinite(ba), fb = Number.isFinite(bb); return fa !== fb ? (fa ? -1 : 1) : (fa && ba !== bb ? ba - bb : byOrder(a, b)); }
                 : tableSort === 'bib' ? (a, b) => num(a) - num(b) || String(a.number).localeCompare(String(b.number)) || byOrder(a, b)
+                : tableSort === 'name' ? (a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'fr', { sensitivity: 'base' }) || byOrder(a, b)
                 : byOrder);
-            document.querySelectorAll('.sortbtn').forEach(btn => { const on = btn.dataset.sort === tableSort; btn.setAttribute('aria-pressed', on); btn.className = 'sortbtn px-3 py-1.5' + (btn.dataset.sort !== 'order' ? ' border-l border-slate-600' : '') + (on ? ' bg-amber-400 text-slate-950' : ' bg-slate-900 text-slate-300 hover:bg-slate-700'); });
-            const st = document.getElementById('sortTitle'); if (st) st.textContent = { order: '(par ordre de passage)', best: '(par meilleur temps)', bib: '(par numéro de course)' }[tableSort];
+            if (tableDir < 0) sorted.reverse();
+            document.querySelectorAll('.colsort').forEach(btn => { const on = btn.dataset.sort === tableSort; btn.classList.toggle('on', on); btn.setAttribute('aria-sort', on ? (tableDir > 0 ? 'ascending' : 'descending') : 'none'); btn.querySelector('span').textContent = on ? (tableDir > 0 ? '▲' : '▼') : '↕'; });
+            document.querySelectorAll('.sortbtn').forEach(btn => { const on = btn.dataset.sort === tableSort; btn.setAttribute('aria-pressed', on); btn.className = 'sortbtn px-3 py-1.5 rounded-lg border text-sm font-semibold ' + (on ? 'bg-amber-400 text-slate-950 border-amber-400' : 'border-slate-600 text-slate-300 hover:text-white'); });
+            const st = document.getElementById('sortTitle'); if (st) st.textContent = { order: '(par ordre de passage)', best: '(par meilleur temps)', bib: '(par numéro de course)', name: '(par nom de pilote)' }[tableSort] + (tableDir < 0 ? ', ordre inverse' : '');
             tbody.innerHTML = sorted.map(d => {
                 const x = derived.get(d.id);
                 let cells = '';
@@ -2446,6 +2500,9 @@ const ET = (() => {
                 ? `${events.length} épreuve(s) prise(s) en compte : ` + events.map(ev => `${ev.meta.date.split('-').reverse().join('/')} ${ev.meta.name || 'sans nom'}`).join(' · ')
                 : `Aucune épreuve ${year} comptant pour le championnat pour le moment.`;
             document.getElementById('printRaceTitle').innerText = `Classement du championnat des slaloms ${year}`;
+            // championnat : plusieurs organisateurs possibles, pas de logo d'association
+            const pl = document.getElementById('printLogo'); if (pl) pl.style.display = 'none';
+            const po = document.getElementById('printOrg'); if (po) po.textContent = 'Ligue du sport automobile de Polynésie française';
             document.getElementById('printRaceDate').innerText = new Date().toLocaleDateString('fr-FR');
             document.getElementById('printSubtitle').innerText = 'Barème : 5 points de participation + barème F1 pour les 10 premiers ; seuls les licenciés à l\'année marquent des points.';
             const warn = [];
@@ -2698,7 +2755,7 @@ const ET = (() => {
             if (etr.log.length > 60) etr.log.length = 60;
         }
         function etAck() { const a = etAlert(); if (a) { etr.ack = a.key + '|' + a.lvl; etr.log.unshift({ at: Date.now(), bib: a.bib, txt: 'Pris en compte par le PC course', lvl: 'ack' }); } etRender(); }
-        function etShowPlan() { if (evTab !== 'course') setEvTab('course'); setTimeout(() => { const s = document.getElementById('etraceSection'); if (s) s.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 50); }
+        function etShowPlan() { if (evTab !== 'etrace') setEvTab('etrace'); }
         function etRender() {
             const sec = document.getElementById('etraceSection'), ban = document.getElementById('etAlert');
             if (!sec || !ban) return;
@@ -2743,7 +2800,68 @@ const ET = (() => {
             sec.querySelector('#etErr').textContent = etr.err;
             sec.querySelector('#etCfg').textContent = `Orange dès ${etr.cfg.orange} s d'arrêt · rouge à ${etr.cfg.red} s · violet après ${etr.cfg.lost} s sans position · aucune sonnerie. e-Trace : ${ET.BETA.toLowerCase()}.`;
         }
-        setInterval(() => { if (etr.code) etRender(); }, 1000);
+        setInterval(() => { if (etr.code) etRender(); renderStrip(); }, 1000);
+
+        // ===================== Couleurs des manches =====================
+        // Essais en gris ardoise, puis une teinte par manche ; mêmes couleurs dans l'en-tête du tableau et sur le bouton de clôture.
+        const HEAT_COLORS = ['#0ea5e9', '#8b5cf6', '#ec4899', '#10b981', '#f97316', '#ca8a04'];
+        function heatColor(i) { return isTrialSlot(i) ? (i % 2 ? '#475569' : '#64748b') : HEAT_COLORS[(i - nE()) % HEAT_COLORS.length]; }
+        function slotShortLabel(i) { return isTrialSlot(i) ? (nE() > 1 ? 'E' + (i + 1) : 'Essai') : 'M' + (i - nE() + 1); }
+
+        // ===================== Association organisatrice =====================
+        // Un clic sur le logo de l'en-tête passe de l'ASAT à l'ASAP ; le choix est enregistré avec l'événement.
+        const ORGS = {
+            asat: { name: 'Association sportive automobile de Tahiti', short: 'ASAT', logo: 'data:image/jpeg;base64,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' },
+            asap: { name: 'Association sportive automobile de Polynésie', short: 'ASAP', logo: 'data:image/jpeg;base64,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' }
+        };
+        function curOrg() { return ORGS[state && state.meta && state.meta.org] ? state.meta.org : 'asat'; }
+        function setOrg(v) { if (!ORGS[v] || !state || !state.meta) return; state.meta.org = v; save(); renderAll(); }
+        function toggleOrg() { if (view !== 'event') return; setOrg(curOrg() === 'asat' ? 'asap' : 'asat'); }
+        function renderOrg() {
+            const o = ORGS[curOrg()], img = document.getElementById('orgLogo'); if (!img) return;
+            if (img.getAttribute('src') !== o.logo) img.src = o.logo;
+            img.alt = 'Logo de l\'' + o.short;
+            document.getElementById('orgLogoBtn').title = o.short + ' : cliquer pour passer à l\'' + (curOrg() === 'asat' ? 'ASAP' : 'ASAT');
+            document.getElementById('orgName').textContent = o.name;
+            // en-tête des PDF de l'événement : logo et nom de l'organisateur
+            const pl = document.getElementById('printLogo');
+            if (pl) { if (pl.getAttribute('src') !== o.logo) pl.src = o.logo; pl.alt = 'Logo de l\'' + o.short; pl.style.display = ''; }
+            const po = document.getElementById('printOrg'); if (po) po.textContent = `Rapport officiel · organisé par l'${o.short} (${o.name})`;
+            const sel = document.getElementById('orgSelect'); if (sel) sel.value = curOrg();
+        }
+
+        // ===================== Bandeau d'état de l'onglet Course =====================
+        function renderStrip() {
+            const box = document.getElementById('statusStrip'); if (!box || view !== 'event') return;
+            const chip = (tab, color, label, txt) => `<button type="button" class="stchip" onclick="setEvTab('${tab}')"><i style="background:${color}"></i>${label} <small>${esc(txt)}</small></button>`;
+            const out = [];
+            const has = !!window.FB, logged = has && !!fbUser, code = logged ? state.liveCode : null;
+            const ok = liveDevices.filter(d => d.status === 'ok'), pend = liveDevices.filter(d => d.status === 'pending');
+            out.push(chip('connexions', !has ? '#64748b' : code && !liveErrMsg ? '#6ee7b7' : '#fcd34d', 'Liaison',
+                !has ? 'hors ligne' : !logged ? 'non connecté' : !code ? 'liaison fermée' : liveErrMsg ? 'perturbée' : `en direct · ${ok.filter(d => d.role !== 'dc' && d.role !== 'trace').length} poste(s)` + (ok.some(d => d.role === 'dc') ? ` + ${ok.filter(d => d.role === 'dc').length} DC` : '')));
+            if (pend.length) out.push(chip('connexions', '#fcd34d', 'Téléphones', `${pend.length} en attente`));
+            out.push(chip('connexions', pont.paused ? '#fcd34d' : pont.at ? (pont.err ? '#fcd34d' : '#6ee7b7') : '#64748b', 'Pont webresults', pont.paused ? 'en pause' : pont.at ? `actif · ${hhmm(pont.at)}:${String(new Date(pont.at).getSeconds()).padStart(2, '0')}` : 'inactif'));
+            const nf = fdsPending().length;
+            out.push(chip('connexions', nf ? '#2dd4bf' : '#64748b', 'Fichiers FDS', !logged ? 'non connecté' : nf ? `${nf} à importer` : 'rien en attente'));
+            const a = typeof etAlert === 'function' ? etAlert() : null, nt = etr && etr.tr ? etr.tr.size : 0;
+            const ac = a && ['orange', 'red', 'lost'].includes(a.lvl) ? ET.COL[a.lvl] : '#a78bfa';
+            out.push(chip('etrace', nt || a ? ac : '#64748b', 'e-Trace', a && a.lvl !== 'none' && ET.LBL[a.lvl] ? `n° ${a.bib} · ${ET.LBL[a.lvl].toLowerCase()}` : a && a.lvl === 'ok' ? `n° ${a.bib} en piste · suivi actif` : `${nt} téléphone(s)`));
+            const html = out.join('');
+            if (box.innerHTML !== html) box.innerHTML = html;
+            const dot = document.getElementById('etTabDot');
+            if (dot) { const on = a && ['orange', 'red', 'lost'].includes(a.lvl); dot.classList.toggle('hidden', !on); if (on) dot.style.background = ET.COL[a.lvl]; }
+        }
+
+        // ===================== Fichiers FDS ignorés (essais, doublons) =====================
+        // « Ignorer » masque un fichier sur cet ordinateur sans l'effacer de la base ; l'import automatique ne le prend plus.
+        let fdsIgnored = {}, fdsShowIgnored = false;
+        try { fdsIgnored = JSON.parse(localStorage.getItem('asat_fds_ignored') || '{}') || {}; } catch (e) { fdsIgnored = {}; }
+        function fdsSaveIgn() { try { localStorage.setItem('asat_fds_ignored', JSON.stringify(fdsIgnored)); } catch (e) {} }
+        function fdsPending() { const done = (state && state.fdsInbox) || {}; return inbox.docs.filter(d => !done[d.id] && !fdsIgnored[d.id]); }
+        function fdsIgnore(id) { fdsIgnored[id] = new Date().toISOString(); fdsSaveIgn(); renderInbox(); renderStrip(); }
+        function fdsRestore(id) { delete fdsIgnored[id]; fdsSaveIgn(); renderInbox(); renderStrip(); }
+        function fdsIgnoreAll() { for (const d of fdsPending()) fdsIgnored[d.id] = new Date().toISOString(); fdsSaveIgn(); renderInbox(); renderStrip(); }
+        function fdsToggleIgn() { fdsShowIgnored = !fdsShowIgnored; renderInbox(); }
         // ===================== Fichiers FDS reçus par courriel =====================
         // Un script Google (compte de l'ASAT) dépose dans inbox/ chaque pièce jointe .fds envoyée depuis l'iPad (Smart Chrono).
         const inbox = { sub: null, docs: [], err: '' };
@@ -2770,7 +2888,7 @@ const ET = (() => {
         function inboxAuto() {
             if (!fdsAutoSince || view !== 'event' || state.liveFollower) return;
             const done = state.fdsInbox || {};
-            const fresh = inbox.docs.filter(d => String(d.sentAt) >= fdsAutoSince && !done[d.id] && !inboxIsList(d));
+            const fresh = inbox.docs.filter(d => String(d.sentAt) >= fdsAutoSince && !done[d.id] && !fdsIgnored[d.id] && !inboxIsList(d));
             if (!fresh.length) return;
             const last = fresh[0];
             for (const d of fresh.slice(1)) done[d.id] = 'remplacé';
@@ -2784,18 +2902,24 @@ const ET = (() => {
         }
         function renderInbox() {
             const box = document.getElementById('fdsInbox'); if (!box) return;
-            document.getElementById('fdsInboxBox').classList.toggle('hidden', !(window.FB && fbUser));
+            const on = !!(window.FB && fbUser);
+            document.getElementById('fdsInboxBox').classList.toggle('hidden', !on);
+            document.getElementById('fdsOff').classList.toggle('hidden', on);
+            const nIgn = inbox.docs.filter(d => fdsIgnored[d.id]).length, pendN = fdsPending().length;
+            document.getElementById('fdsIgnoreAll').classList.toggle('hidden', !on || pendN < 1);
+            document.getElementById('fdsIgnInfo').innerHTML = nIgn ? `${nIgn} fichier(s) ignoré(s), masqué(s) sur cet ordinateur seulement. <button type="button" onclick="fdsToggleIgn()" class="underline text-teal-300 hover:text-white">${fdsShowIgnored ? 'Les masquer' : 'Les afficher'}</button>` : '« Ignorer » masque un fichier sur cet ordinateur sans l\'effacer ; l\'import automatique ne le prend plus.';
             const cb = document.getElementById('fdsAuto'); cb.checked = !!fdsAutoSince;
             document.getElementById('fdsAutoInfo').textContent = fdsAutoSince ? `actif depuis ${hhmm(fdsAutoSince)}` + (state.liveFollower ? ' (fait par l\'appareil qui a ouvert la liaison)' : '') : '';
             const done = state.fdsInbox || {};
             const ko = v => (Math.round(Number(v) / 1024)) + ' Ko';
-            box.innerHTML = (inbox.err ? `<div class="text-rose-300 text-xs">${esc(inbox.err)}</div>` : '') + (inbox.docs.length ? inbox.docs.slice(0, 8).map(d => {
+            box.innerHTML = (inbox.err ? `<div class="text-rose-300 text-xs">${esc(inbox.err)}</div>` : '') + (inbox.docs.filter(d => fdsShowIgnored || !fdsIgnored[d.id]).length ? inbox.docs.filter(d => fdsShowIgnored || !fdsIgnored[d.id]).slice(0, 10).map(d => {
                 const st = done[d.id], list = inboxIsList(d);
                 const dt = new Date(d.sentAt), day = isNaN(dt) ? '' : (localDate(d.sentAt) === todayISO() ? '' : localDate(d.sentAt).split('-').reverse().join('/') + ' ');
-                return `<div class="flex flex-wrap items-center justify-between gap-2 ${st ? '' : 'bg-teal-500/10 rounded-lg p-2'}">
+                const ign = fdsIgnored[d.id];
+                return `<div class="flex flex-wrap items-center justify-between gap-2 ${st || ign ? (ign ? 'opacity-60' : '') : 'bg-teal-500/10 rounded-lg p-2'}">
                     <span><b class="font-mono">${esc(day + hhmm(d.sentAt))}</b> · ${esc(d.name || '?')} <span class="text-slate-500 text-xs">${ko(d.size)}${list ? ' · liste de pilotes' : ''}</span></span>
-                    ${st === 'remplacé' ? '<span class="text-xs text-slate-500">remplacé par un envoi plus récent</span>' : st ? `<span class="text-xs text-emerald-300 font-semibold">✔ importé à ${esc(hhmm(st))}</span>` : `<button type="button" onclick="inboxImport('${esc(d.id)}', false)" class="bg-teal-600 hover:bg-teal-500 text-white px-2 py-1 rounded-lg text-xs font-bold">Importer</button>`}</div>`;
-            }).join('') : '<div class="text-slate-500 text-xs">Aucun fichier reçu pour le moment. Depuis l\'iPad, envoyez le fichier de course par courriel avec le compte de l\'association (relais installé) : il apparaîtra ici une à deux minutes plus tard.</div>');
+                    ${st === 'remplacé' ? '<span class="text-xs text-slate-500">remplacé par un envoi plus récent</span>' : st ? `<span class="text-xs text-emerald-300 font-semibold">✔ importé à ${esc(hhmm(st))}</span>` : ign ? `<span class="text-xs text-slate-500">ignoré</span> <button type="button" onclick="fdsRestore('${esc(d.id)}')" class="bg-slate-700 hover:bg-slate-600 text-slate-100 px-2 py-1 rounded-lg text-xs font-bold">Rétablir</button>` : `<span class="flex gap-1"><button type="button" onclick="inboxImport('${esc(d.id)}', false)" class="bg-teal-600 hover:bg-teal-500 text-white px-2 py-1 rounded-lg text-xs font-bold">Importer</button><button type="button" onclick="fdsIgnore('${esc(d.id)}')" class="bg-slate-700 hover:bg-slate-600 text-slate-100 px-2 py-1 rounded-lg text-xs font-bold">Ignorer</button></span>`}</div>`;
+            }).join('') : (inbox.docs.length ? '<div class="text-slate-500 text-xs">Aucun fichier en attente : tous sont importés ou ignorés.</div>' : '<div class="text-slate-500 text-xs">Aucun fichier reçu pour le moment. Depuis l\'iPad, envoyez le fichier de course par courriel avec le compte de l\'association (relais installé) : il apparaîtra ici une à deux minutes plus tard.</div>'));
         }
         function liveError(e) { liveErrMsg = (e && e.code === 'permission-denied') ? 'Accès refusé par la base : vérifiez l\'adresse du compte dans les règles de sécurité.' : 'Liaison interrompue (réseau) : reprise automatique.'; renderLive(); }
         function liveResub() {
@@ -3010,6 +3134,7 @@ const ET = (() => {
             const st = el('liveState');
             st.textContent = !has ? 'Hors ligne' : !logged ? 'Non connecté' : !code ? 'Connecté · liaison fermée' : liveErrMsg ? 'Liaison perturbée' : `En direct · ${liveDevices.filter(d => d.status === 'ok' && d.role !== 'dc' && d.role !== 'trace').length} poste(s)` + ((n => n ? ` + ${n} écran${n > 1 ? 's' : ''} DC` : '')(liveDevices.filter(d => d.status === 'ok' && d.role === 'dc').length)) + ((n => n ? ` + ${n} e-Trace` : '')(liveDevices.filter(d => d.status === 'ok' && d.role === 'trace').length));
             st.className = 'text-xs font-bold px-3 py-1 rounded-full ' + (code && !liveErrMsg ? 'bg-emerald-500/20 text-emerald-200' : logged ? 'bg-amber-500/20 text-amber-200' : 'bg-slate-700 text-slate-300');
+            renderStrip();
             const badge = el('liveTabBadge');
             badge.textContent = pend.length ? `${pend.length} en attente` : ''; badge.classList.toggle('hidden', !pend.length);
             if (!logged) return;
