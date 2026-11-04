@@ -1278,7 +1278,7 @@ const ET = (() => {
             if (Number.isFinite(at)) {
                 if (ca[slot] && at > Date.parse(ca[slot]) + 5 * 60000) out.warn.push(`saisie à ${hhmm(inf.at)}, après la clôture de ${slotLong(slot)} (${hhmm(ca[slot])})`);
                 if (slot > 0 && ca[slot - 1] && at < Date.parse(ca[slot - 1]) - 2 * 60000) out.warn.push(`saisie à ${hhmm(inf.at)}, avant la clôture de ${slotLong(slot - 1)} (${hhmm(ca[slot - 1])})`);
-                if (!inf.manual && state.meta.date && localDate(inf.at) !== state.meta.date) out.warn.push(`saisie le ${localDate(inf.at).split('-').reverse().join('/')}, autre jour que l'épreuve`);
+                if (!inf.manual && state.meta.date && !sameRaceDay(inf.at)) out.warn.push(`saisie le ${localDate(inf.at).split('-').reverse().join('/')}, autre jour que l'épreuve`);
             }
             // concordance avec l'heure du passage enregistrée par les cellules (fichier FDS)
             const pa = passageAt(inf.bib, inf.at);
@@ -1292,6 +1292,8 @@ const ET = (() => {
             if (twin) out.warn.push('doublon possible (même poste, moins de 30 s d\'écart)');
             return out;
         }
+        // jour de l'épreuve, nuit comprise : une course de nuit peut finir après minuit (jusqu'à 6 h le lendemain)
+        function sameRaceDay(iso) { const d = new Date(iso); if (isNaN(d)) return true; return localDate(iso) === state.meta.date || localDate(new Date(d.getTime() - 6 * 3600000).toISOString()) === state.meta.date; }
         function hhmm(iso) { const d = new Date(iso); return isNaN(d) ? '?' : String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'); }
         function localDate(iso) { const d = new Date(iso); return isNaN(d) ? '' : d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
         // Lecture des messages : lignes « CLN1|id|poste|nom|manche|n°|type|heure|statut »
