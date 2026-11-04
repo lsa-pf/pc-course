@@ -1101,7 +1101,11 @@ const ET = (() => {
         // - manches clôturées : le DNF et le passage suivant tombent dans la même manche ;
         // - sinon : compter ce DNF comme une manche donnerait au pilote plus de manches que celles déjà commencées.
         // (webresults range les DNF à part en bas de liste : leur position ne renseigne pas sur l'ordre.)
+        // Règle du chronométrage ASAT : un passage à refaire est « UNIDENT » sur l'iPad (il disparaît de webresults et du fichier FDS),
+        // donc un DNF suivi d'un nouveau départ = manche suivante. Ancienne détection conservée mais désactivée.
+        const DNF_REDO_DETECT = false;
         function dnfRedone(bib, p, list, maxSlot) {
+            if (!DNF_REDO_DETECT) return false;
             if (statusLabel(p.finish) === 'DSQ') return false;   // une disqualification n'est jamais « refaite »
             const later = list.filter(q => q.run > p.run && state.decisions[pkey(bib, q.run)] !== 'excluded');
             if (!later.some(q => q.status === 'time' || q.status === 'dnf')) return false;
@@ -3247,17 +3251,22 @@ const ET = (() => {
             for (const r of d.results) {
                 const rc = racers.get(r.racerId); if (!rc) continue;
                 const s0 = ts.get(r.sTimeId), f0 = ts.get(r.fTimeId);
-                runs.push({ bib: String(rc.bib), run: Number(r.run) || 0, status: r.status === 5 && r.result > 0 ? 'time' : r.status === 3 ? 'dnf' : 'nofinish',
+                // statut 1 sans heure de départ : passage « UNIDENT » sur l'iPad (ou pilote pas encore appelé) — le pilote reprendra
+                // ce passage plus tard ; webresults ne l'affiche pas non plus
+                if (r.status === 1 && !s0) continue;
+                runs.push({ bib: String(rc.bib), run: Number(r.run) || 0, status: r.status === 5 && r.result > 0 ? 'time' : r.status === 3 || r.status === 4 ? 'dnf' : 'nofinish', dnfLabel: r.status === 4 ? 'DSQ' : 'DNF',   // Smart-Chrono : 3 = DNF, 4 = DSQ
                     sec: (Number(r.result) || 0) / 1e4, ts: s0 ? fdsClock(s0.time, tz) : null, tf: f0 ? fdsClock(f0.time, tz) : null });
             }
-            // Sessions (= manches) : on repart au début de la liste de départ, ou un pilote déjà passé repart, après au moins 4 min d'interruption
+            // Sessions (= manches). Un pilote qui repart alors qu'il a déjà un passage dans la manche en cours entame la manche suivante,
+            // même juste derrière lui-même ou après un DNF (un passage à refaire est « UNIDENT » sur l'iPad : il n'apparaît plus pour ce pilote).
+            // Repli : retour en arrière dans la liste de départ après au moins 4 min d'interruption.
             const timed = runs.filter(x => x.ts).sort((a, b) => a.ts - b.ts);
             const sessions = []; let cur = null, prev = null;
             for (const x of timed) {
                 const gap = prev ? (x.ts - prev.ts) / 1000 : Infinity;
                 const back = prev && pos.has(x.bib) && pos.has(prev.bib) && pos.get(x.bib) < pos.get(prev.bib);
                 const again = cur && cur.bibs.has(x.bib);
-                if (!cur || ((back || again) && gap > 240)) { cur = { start: x.ts, end: x.ts, bibs: new Set(), n: 0 }; sessions.push(cur); }
+                if (!cur || again || (back && gap > 240)) { cur = { start: x.ts, end: x.ts, bibs: new Set(), n: 0 }; sessions.push(cur); }
                 x.session = sessions.length - 1; cur.bibs.add(x.bib); cur.end = x.tf || x.ts; cur.n++; prev = x;
             }
             // passages sans heure (non partis, abandon avant départ…) : rattachés à la session du passage suivant ou précédent du même pilote
@@ -3311,7 +3320,7 @@ const ET = (() => {
             for (const x of f.runs) (by[x.bib] = by[x.bib] || []).push(x);
             for (const b of Object.keys(by)) {
                 state.passages[b] = by[b].sort((a, c) => a.run - c.run).map(x => ({
-                    run: x.run, inter: '', finish: f.csv ? (x.status === 'dnf' ? x.dnfLabel : x.finish) : (x.status === 'time' ? fdsFmt(x.sec) : x.status === 'dnf' ? 'DNF' : ''),
+                    run: x.run, inter: '', finish: f.csv ? (x.status === 'dnf' ? x.dnfLabel : x.finish) : (x.status === 'time' ? fdsFmt(x.sec) : x.status === 'dnf' ? (x.dnfLabel || 'DNF') : ''),
                     status: x.status, ...(f.csv ? {} : { slot: x.session, ...(x.ts ? { ts: x.ts } : {}), ...(x.tf ? { tf: x.tf } : {}) })
                 }));
             }
